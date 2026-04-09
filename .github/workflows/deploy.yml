@@ -1,0 +1,109 @@
+name: CI-CD Deploy
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BACKEND: ${{ github.repository }}-backend
+  IMAGE_FRONTEND: ${{ github.repository }}-frontend
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ota_channel_manager
+          POSTGRES_USER: ota_user
+          POSTGRES_PASSWORD: ota_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ota_user -d ota_channel_manager"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm install
+
+      - name: Prepare backend env
+        working-directory: backend
+        run: |
+          cp .env.example .env
+          echo "DATABASE_URL=postgresql://ota_user:ota_password@localhost:5432/ota_channel_manager?schema=public" >> .env
+
+      - name: Prisma generate and migrate
+        working-directory: backend
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm install
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test
+
+      - name: Set lowercase image names
+        id: names
+        run: |
+          echo "backend=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "frontend=$(echo '${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build backend image
+        run: docker build -t ${{ steps.names.outputs.backend }}:${{ github.sha }} ./backend
+
+      - name: Build frontend image
+        run: docker build -t ${{ steps.names.outputs.frontend }}:${{ github.sha }} ./frontend
+
+      - name: Push backend image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push ${{ steps.names.outputs.backend }}:${{ github.sha }}
+
+      - name: Push frontend image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push ${{ steps.names.outputs.frontend }}:${{ github.sha }}
+
+      - name: Deployment hook placeholder
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Optional deployment hook: trigger Render/Railway/EC2 deployment here"

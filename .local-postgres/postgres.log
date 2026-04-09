@@ -1,0 +1,62 @@
+2026-04-09 03:51:31.840 IST [28300] LOG:  starting PostgreSQL 15.17, compiled by Visual C++ build 1944, 64-bit
+2026-04-09 03:51:31.845 IST [28300] LOG:  listening on IPv6 address "::1", port 5433
+2026-04-09 03:51:31.845 IST [28300] LOG:  listening on IPv4 address "127.0.0.1", port 5433
+2026-04-09 03:51:31.898 IST [36608] LOG:  database system was shut down at 2026-04-09 03:51:27 IST
+2026-04-09 03:51:31.930 IST [28300] LOG:  database system is ready to accept connections
+2026-04-09 03:51:42.133 IST [46676] ERROR:  syntax error at or near "start" at character 4
+2026-04-09 03:51:42.133 IST [46676] STATEMENT:  DO start BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ota_user') THEN CREATE ROLE ota_user LOGIN PASSWORD 'ota_password'; ELSE ALTER ROLE ota_user WITH LOGIN PASSWORD 'ota_password'; END IF; END start;
+2026-04-09 03:51:42.334 IST [17756] FATAL:  database "ota_channel_manager" does not exist
+2026-04-09 03:52:17.102 IST [44796] ERROR:  relation "_prisma_migrations" does not exist at character 126
+2026-04-09 03:52:17.102 IST [44796] STATEMENT:  SELECT "id", "checksum", "finished_at", "migration_name", "logs", "rolled_back_at", "started_at", "applied_steps_count" FROM "_prisma_migrations" ORDER BY "started_at" ASC
+2026-04-09 03:52:17.102 IST [44796] ERROR:  permission denied to create database
+2026-04-09 03:52:17.102 IST [44796] STATEMENT:  CREATE DATABASE "prisma_migrate_shadow_db_64ff9c44-ae97-4370-8b70-8ec2974d172f"
+2026-04-09 03:52:17.165 IST [44796] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 03:52:33.001 IST [40452] ERROR:  relation "_prisma_migrations" does not exist at character 126
+2026-04-09 03:52:33.001 IST [40452] STATEMENT:  SELECT "id", "checksum", "finished_at", "migration_name", "logs", "rolled_back_at", "started_at", "applied_steps_count" FROM "_prisma_migrations" ORDER BY "started_at" ASC
+2026-04-09 03:52:33.291 IST [4916] LOG:  checkpoint starting: immediate force wait
+2026-04-09 03:52:33.565 IST [4916] LOG:  checkpoint complete: wrote 927 buffers (5.7%); 1 WAL file(s) added, 0 removed, 0 recycled; write=0.079 s, sync=0.146 s, total=0.275 s; sync files=308, longest=0.005 s, average=0.001 s; distance=8433 kB, estimate=8433 kB
+2026-04-09 03:52:34.087 IST [4916] LOG:  checkpoint starting: immediate force wait
+2026-04-09 03:52:34.102 IST [4916] LOG:  checkpoint complete: wrote 7 buffers (0.0%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.004 s, sync=0.004 s, total=0.016 s; sync files=7, longest=0.002 s, average=0.001 s; distance=4216 kB, estimate=8012 kB
+2026-04-09 03:52:34.493 IST [4916] LOG:  checkpoint starting: immediate force wait
+2026-04-09 03:52:34.529 IST [4916] LOG:  checkpoint complete: wrote 51 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.010 s, sync=0.022 s, total=0.037 s; sync files=44, longest=0.002 s, average=0.001 s; distance=4369 kB, estimate=7647 kB
+2026-04-09 03:52:34.910 IST [4916] LOG:  checkpoint starting: immediate force wait
+2026-04-09 03:52:34.922 IST [4916] LOG:  checkpoint complete: wrote 7 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.004 s, total=0.013 s; sync files=7, longest=0.001 s, average=0.001 s; distance=4217 kB, estimate=7304 kB
+2026-04-09 03:52:35.141 IST [40452] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 03:54:08.865 IST [17592] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 03:56:01.426 IST [28300] LOG:  background worker "logical replication launcher" (PID 23608) was terminated by exception 0xC000013A
+2026-04-09 03:56:01.426 IST [28300] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-09 03:56:01.426 IST [28300] LOG:  terminating any other active server processes
+2026-04-09 03:56:01.445 IST [28300] LOG:  received fast shutdown request
+^C2026-04-09 04:59:28.238 IST [47388] LOG:  starting PostgreSQL 15.17, compiled by Visual C++ build 1944, 64-bit
+2026-04-09 04:59:28.243 IST [47388] LOG:  listening on IPv6 address "::1", port 55432
+2026-04-09 04:59:28.244 IST [47388] LOG:  listening on IPv4 address "127.0.0.1", port 55432
+2026-04-09 04:59:28.300 IST [44340] LOG:  database system was shut down at 2026-04-09 04:59:23 IST
+2026-04-09 04:59:28.337 IST [47388] LOG:  database system is ready to accept connections
+2026-04-09 05:00:14.747 IST [46324] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 05:04:28.300 IST [46432] LOG:  checkpoint starting: time
+2026-04-09 05:06:15.898 IST [46432] LOG:  checkpoint complete: wrote 987 buffers (6.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=107.472 s, sync=0.119 s, total=107.599 s; sync files=359, longest=0.001 s, average=0.001 s; distance=4698 kB, estimate=4698 kB
+2026-04-09 05:19:10.305 IST [47068] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 05:19:28.945 IST [46432] LOG:  checkpoint starting: time
+2026-04-09 05:19:32.913 IST [4300] ERROR:  column properties.managerId does not exist at character 100
+2026-04-09 05:19:32.913 IST [4300] STATEMENT:  SELECT "public"."properties"."id", "public"."properties"."name", "public"."properties"."location", "public"."properties"."managerId" FROM "public"."properties" WHERE "public"."properties"."managerId" IN ($1) OFFSET $2
+2026-04-09 05:19:32.926 IST [4300] ERROR:  column properties.managerId does not exist at character 100
+2026-04-09 05:19:32.926 IST [4300] STATEMENT:  SELECT "public"."properties"."id", "public"."properties"."name", "public"."properties"."location", "public"."properties"."managerId" FROM "public"."properties" WHERE "public"."properties"."managerId" IN ($1) OFFSET $2
+2026-04-09 05:19:34.061 IST [46432] LOG:  checkpoint complete: wrote 47 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=5.059 s, sync=0.039 s, total=5.116 s; sync files=42, longest=0.011 s, average=0.001 s; distance=209 kB, estimate=4249 kB
+2026-04-09 05:19:36.286 IST [4300] ERROR:  column properties.managerId does not exist at character 100
+2026-04-09 05:19:36.286 IST [4300] STATEMENT:  SELECT "public"."properties"."id", "public"."properties"."name", "public"."properties"."location", "public"."properties"."managerId" FROM "public"."properties" WHERE "public"."properties"."managerId" IN ($1) OFFSET $2
+2026-04-09 05:19:50.155 IST [24656] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 05:19:50.155 IST [4300] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 05:24:28.074 IST [46432] LOG:  checkpoint starting: time
+2026-04-09 05:24:33.493 IST [46432] LOG:  checkpoint complete: wrote 50 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=5.370 s, sync=0.028 s, total=5.419 s; sync files=35, longest=0.012 s, average=0.001 s; distance=15 kB, estimate=3826 kB
+2026-04-09 05:28:24.681 IST [47388] LOG:  background worker "logical replication launcher" (PID 30304) was terminated by exception 0xC000013A
+2026-04-09 05:28:24.681 IST [47388] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-09 05:28:24.681 IST [47388] LOG:  terminating any other active server processes
+2026-04-09 05:28:24.731 IST [47388] LOG:  received fast shutdown request
+^C

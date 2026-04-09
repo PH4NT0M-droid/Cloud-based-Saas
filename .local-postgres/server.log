@@ -1,0 +1,179 @@
+2026-04-09 03:57:15.442 IST [29908] LOG:  starting PostgreSQL 15.17, compiled by Visual C++ build 1944, 64-bit
+2026-04-09 03:57:15.447 IST [29908] LOG:  could not bind IPv6 address "::1": Permission denied
+2026-04-09 03:57:15.447 IST [29908] LOG:  could not bind IPv4 address "127.0.0.1": Permission denied
+2026-04-09 03:57:15.447 IST [29908] WARNING:  could not create listen socket for "localhost"
+2026-04-09 03:57:15.447 IST [29908] FATAL:  could not create any TCP/IP sockets
+2026-04-09 03:57:15.450 IST [29908] LOG:  database system is shut down
+2026-04-09 03:57:59.619 IST [47564] LOG:  starting PostgreSQL 15.17, compiled by Visual C++ build 1944, 64-bit
+2026-04-09 03:57:59.620 IST [47564] LOG:  listening on IPv4 address "0.0.0.0", port 55432
+2026-04-09 03:57:59.682 IST [47764] LOG:  database system was interrupted; last known up at 2026-04-09 03:52:34 IST
+2026-04-09 03:58:05.564 IST [47764] LOG:  could not open file "./server.log": sharing violation
+2026-04-09 03:58:05.564 IST [47764] DETAIL:  Continuing to retry for 30 seconds.
+2026-04-09 03:58:05.564 IST [47764] HINT:  You might have antivirus, backup, or similar software interfering with the database system.
+2026-04-09 03:58:32.639 IST [47764] LOG:  syncing data directory (fsync), elapsed time: 32.95 s, current path: .
+2026-04-09 03:58:32.641 IST [47764] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-04-09 03:58:32.646 IST [47764] LOG:  redo starts at 0/29BA670
+2026-04-09 03:58:32.647 IST [47764] WARNING:  could not open directory "base/16398": No such file or directory
+2026-04-09 03:58:32.647 IST [47764] CONTEXT:  WAL redo at 0/29BA720 for Database/DROP: dir 1663/16398
+2026-04-09 03:58:32.647 IST [47764] WARNING:  some useless files may be left behind in old database directory "base/16398"
+2026-04-09 03:58:32.647 IST [47764] CONTEXT:  WAL redo at 0/29BA720 for Database/DROP: dir 1663/16398
+2026-04-09 03:58:32.684 IST [47764] LOG:  invalid record length at 0/2A4F328: wanted 24, got 0
+2026-04-09 03:58:32.684 IST [47764] LOG:  redo done at 0/2A4F2F0 system usage: CPU: user: 0.00 s, system: 0.01 s, elapsed: 0.03 s
+2026-04-09 03:58:32.688 IST [47744] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-04-09 03:58:32.762 IST [47744] LOG:  checkpoint complete: wrote 137 buffers (0.8%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.027 s, sync=0.042 s, total=0.075 s; sync files=94, longest=0.002 s, average=0.001 s; distance=595 kB, estimate=595 kB
+2026-04-09 03:58:32.818 IST [47564] LOG:  database system is ready to accept connections
+2026-04-09 04:03:22.434 IST [47564] LOG:  server process (PID 40376) was terminated by exception 0xC000013A
+2026-04-09 04:03:22.434 IST [47564] DETAIL:  Failed process was running: SELECT "public"."bookings"."id", "public"."bookings"."otaSource", "public"."bookings"."roomTypeId", "public"."bookings"."checkIn", "public"."bookings"."checkOut", "public"."bookings"."guestName", "public"."bookings"."status"::text, "public"."bookings"."totalPrice", "public"."bookings"."createdAt", "public"."bookings"."updatedAt" FROM "public"."bookings" WHERE 1=1 ORDER BY "public"."bookings"."createdAt" DESC OFFSET $1
+2026-04-09 04:03:22.434 IST [47564] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-09 04:03:22.434 IST [47564] LOG:  terminating any other active server processes
+2026-04-09 04:03:22.451 IST [47564] LOG:  received fast shutdown request
+^C2026-04-09 04:04:08.168 IST [45820] LOG:  starting PostgreSQL 15.17, compiled by Visual C++ build 1944, 64-bit
+2026-04-09 04:04:08.170 IST [45820] LOG:  listening on IPv4 address "0.0.0.0", port 55432
+2026-04-09 04:04:08.225 IST [25248] LOG:  database system was interrupted; last known up at 2026-04-09 03:58:32 IST
+2026-04-09 04:04:13.988 IST [25248] LOG:  could not open file "./server.log": sharing violation
+2026-04-09 04:04:13.988 IST [25248] DETAIL:  Continuing to retry for 30 seconds.
+2026-04-09 04:04:13.988 IST [25248] HINT:  You might have antivirus, backup, or similar software interfering with the database system.
+2026-04-09 04:04:41.178 IST [25248] LOG:  syncing data directory (fsync), elapsed time: 32.95 s, current path: .
+2026-04-09 04:04:41.180 IST [25248] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-04-09 04:04:41.192 IST [25248] LOG:  redo starts at 0/2A4F3A0
+2026-04-09 04:04:41.199 IST [25248] LOG:  invalid record length at 0/2A5AFC0: wanted 24, got 0
+2026-04-09 04:04:41.199 IST [25248] LOG:  redo done at 0/2A5AF88 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-04-09 04:04:41.203 IST [40068] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-04-09 04:04:41.226 IST [40068] LOG:  checkpoint complete: wrote 35 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.009 s, sync=0.010 s, total=0.025 s; sync files=21, longest=0.001 s, average=0.001 s; distance=47 kB, estimate=47 kB
+2026-04-09 04:04:41.267 IST [45820] LOG:  database system is ready to accept connections
+2026-04-09 04:09:41.235 IST [40068] LOG:  checkpoint starting: time
+2026-04-09 04:09:44.427 IST [40068] LOG:  checkpoint complete: wrote 30 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=3.164 s, sync=0.010 s, total=3.193 s; sync files=21, longest=0.001 s, average=0.001 s; distance=4 kB, estimate=42 kB
+2026-04-09 04:14:41.433 IST [40068] LOG:  checkpoint starting: time
+2026-04-09 04:14:42.538 IST [40068] LOG:  checkpoint complete: wrote 11 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=1.094 s, sync=0.006 s, total=1.106 s; sync files=11, longest=0.001 s, average=0.001 s; distance=1 kB, estimate=38 kB
+2026-04-09 04:29:41.559 IST [40068] LOG:  checkpoint starting: time
+2026-04-09 04:29:42.567 IST [40068] LOG:  checkpoint complete: wrote 10 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.981 s, sync=0.007 s, total=1.008 s; sync files=10, longest=0.003 s, average=0.001 s; distance=1 kB, estimate=35 kB
+2026-04-09 04:47:18.600 IST [46608] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:47:18.601 IST [21696] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:47:18.601 IST [30892] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:47:18.602 IST [47264] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:47:18.602 IST [416] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:48:36.573 IST [21140] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:48:56.244 IST [40604] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:49:06.783 IST [47332] ERROR:  column users.permissions does not exist at character 146
+2026-04-09 04:49:06.783 IST [47332] STATEMENT:  SELECT "public"."users"."id", "public"."users"."name", "public"."users"."email", "public"."users"."passwordHash", "public"."users"."role"::text, "public"."users"."permissions", "public"."users"."createdAt", "public"."users"."updatedAt" FROM "public"."users" WHERE ("public"."users"."email" = $1 AND 1=1) LIMIT $2 OFFSET $3
+2026-04-09 04:49:06.812 IST [47332] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:49:22.278 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:49:22.297 IST [40068] LOG:  checkpoint complete: wrote 10 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.006 s, total=0.020 s; sync files=10, longest=0.001 s, average=0.001 s; distance=4407 kB, estimate=4407 kB
+2026-04-09 04:49:22.982 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:49:23.019 IST [40068] LOG:  checkpoint complete: wrote 17 buffers (0.1%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.009 s, sync=0.015 s, total=0.037 s; sync files=15, longest=0.004 s, average=0.001 s; distance=4408 kB, estimate=4408 kB
+2026-04-09 04:49:23.505 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:49:23.517 IST [40068] LOG:  checkpoint complete: wrote 7 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.004 s, total=0.013 s; sync files=7, longest=0.001 s, average=0.001 s; distance=4410 kB, estimate=4410 kB
+2026-04-09 04:50:04.042 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:04.057 IST [40068] LOG:  checkpoint complete: wrote 22 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.007 s, total=0.015 s; sync files=12, longest=0.002 s, average=0.001 s; distance=4489 kB, estimate=4489 kB
+2026-04-09 04:50:04.217 IST [42528] ERROR:  invalid input value for enum "UserRole_new": "OWNER"
+2026-04-09 04:50:04.217 IST [42528] STATEMENT:  /*
+	  Warnings:
+	
+	  - The values [OWNER] on the enum `UserRole` will be removed. If these variants are still used in the database, this will fail.
+	  - You are about to drop the column `ownerId` on the `properties` table. All the data in the column will be lost.
+	
+	*/
+	-- AlterEnum
+	BEGIN;
+	CREATE TYPE "UserRole_new" AS ENUM ('ADMIN', 'MANAGER', 'STAFF');
+	ALTER TABLE "users" ALTER COLUMN "role" DROP DEFAULT;
+	ALTER TABLE "users" ALTER COLUMN "role" TYPE "UserRole_new" USING ("role"::text::"UserRole_new");
+	ALTER TYPE "UserRole" RENAME TO "UserRole_old";
+	ALTER TYPE "UserRole_new" RENAME TO "UserRole";
+	DROP TYPE "UserRole_old";
+	ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'MANAGER';
+	COMMIT;
+	
+	-- DropForeignKey
+	ALTER TABLE "properties" DROP CONSTRAINT "properties_ownerId_fkey";
+	
+	-- DropIndex
+	DROP INDEX "properties_ownerId_idx";
+	
+	-- AlterTable
+	ALTER TABLE "properties" DROP COLUMN "ownerId",
+	ADD COLUMN     "managerId" TEXT;
+	
+	-- AlterTable
+	ALTER TABLE "users" ADD COLUMN     "permissions" JSONB,
+	ALTER COLUMN "role" SET DEFAULT 'MANAGER';
+	
+	-- CreateIndex
+	CREATE INDEX "properties_managerId_idx" ON "properties"("managerId");
+	
+	-- AddForeignKey
+	ALTER TABLE "properties" ADD CONSTRAINT "properties_managerId_fkey" FOREIGN KEY ("managerId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+	
+2026-04-09 04:50:04.218 IST [42528] ERROR:  current transaction is aborted, commands ignored until end of transaction block
+2026-04-09 04:50:04.218 IST [42528] STATEMENT:  UPDATE "_prisma_migrations" SET "logs" = $1 WHERE "id" = $2
+2026-04-09 04:50:04.242 IST [42528] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:50:30.763 IST [9788] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:50:30.882 IST [40392] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:50:31.701 IST [46916] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:50:32.262 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:32.306 IST [40068] LOG:  checkpoint complete: wrote 47 buffers (0.3%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.014 s, sync=0.021 s, total=0.045 s; sync files=37, longest=0.002 s, average=0.001 s; distance=4569 kB, estimate=4569 kB
+2026-04-09 04:50:32.845 IST [45440] ERROR:  invalid input value for enum "UserRole": "MANAGER" at character 82
+2026-04-09 04:50:32.845 IST [45440] STATEMENT:  -- Convert legacy OWNER users before enum migration.
+	UPDATE "users" SET "role" = 'MANAGER' WHERE "role" = 'OWNER';
+	
+	-- Alter enum to the new role set.
+	BEGIN;
+	CREATE TYPE "UserRole_new" AS ENUM ('ADMIN', 'MANAGER', 'STAFF');
+	ALTER TABLE "users" ALTER COLUMN "role" DROP DEFAULT;
+	ALTER TABLE "users" ALTER COLUMN "role" TYPE "UserRole_new" USING ("role"::text::"UserRole_new");
+	ALTER TYPE "UserRole" RENAME TO "UserRole_old";
+	ALTER TYPE "UserRole_new" RENAME TO "UserRole";
+	DROP TYPE "UserRole_old";
+	ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'MANAGER';
+	COMMIT;
+	
+	-- Preserve existing ownership assignments by renaming ownerId -> managerId.
+	ALTER TABLE "properties" DROP CONSTRAINT IF EXISTS "properties_ownerId_fkey";
+	DROP INDEX IF EXISTS "properties_ownerId_idx";
+	ALTER TABLE "properties" RENAME COLUMN "ownerId" TO "managerId";
+	
+	-- Add manager permission payload support.
+	ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "permissions" JSONB;
+	ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'MANAGER';
+	
+	CREATE INDEX IF NOT EXISTS "properties_managerId_idx" ON "properties"("managerId");
+	ALTER TABLE "properties"
+	  ADD CONSTRAINT "properties_managerId_fkey"
+	  FOREIGN KEY ("managerId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+	
+2026-04-09 04:50:32.847 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:32.865 IST [40068] LOG:  checkpoint complete: wrote 19 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.008 s, total=0.019 s; sync files=16, longest=0.001 s, average=0.001 s; distance=4414 kB, estimate=4553 kB
+2026-04-09 04:50:33.035 IST [44092] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:50:51.658 IST [47724] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:50:52.149 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:52.165 IST [40068] LOG:  checkpoint complete: wrote 20 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.006 s, total=0.016 s; sync files=12, longest=0.001 s, average=0.001 s; distance=4487 kB, estimate=4547 kB
+2026-04-09 04:50:52.772 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:52.788 IST [40068] LOG:  checkpoint complete: wrote 11 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.004 s, total=0.017 s; sync files=8, longest=0.001 s, average=0.001 s; distance=4477 kB, estimate=4540 kB
+2026-04-09 04:50:57.035 IST [40456] ERROR:  table "_prisma_migrations" does not exist
+2026-04-09 04:50:57.035 IST [40456] STATEMENT:  DROP TABLE _prisma_migrations
+2026-04-09 04:50:57.639 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:57.740 IST [40068] LOG:  checkpoint complete: wrote 99 buffers (0.6%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.024 s, sync=0.061 s, total=0.102 s; sync files=101, longest=0.002 s, average=0.001 s; distance=5038 kB, estimate=5038 kB
+2026-04-09 04:50:58.344 IST [40068] LOG:  checkpoint starting: immediate force wait
+2026-04-09 04:50:58.357 IST [40068] LOG:  checkpoint complete: wrote 7 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.004 s, total=0.014 s; sync files=7, longest=0.002 s, average=0.001 s; distance=4450 kB, estimate=4979 kB
+2026-04-09 04:50:58.538 IST [40456] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 04:52:18.015 IST [45820] LOG:  server process (PID 47620) was terminated by exception 0xC000013A
+2026-04-09 04:52:18.015 IST [45820] DETAIL:  Failed process was running: SELECT "public"."users"."id", "public"."users"."name", "public"."users"."email", "public"."users"."passwordHash", "public"."users"."role"::text, "public"."users"."permissions", "public"."users"."createdAt", "public"."users"."updatedAt" FROM "public"."users" WHERE ("public"."users"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3
+2026-04-09 04:52:18.015 IST [45820] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-09 04:52:18.015 IST [45820] LOG:  terminating any other active server processes
+2026-04-09 04:52:18.037 IST [45820] LOG:  received fast shutdown request
+^C
