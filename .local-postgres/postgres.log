@@ -59,4 +59,21 @@
 2026-04-09 05:28:24.681 IST [47388] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
 2026-04-09 05:28:24.681 IST [47388] LOG:  terminating any other active server processes
 2026-04-09 05:28:24.731 IST [47388] LOG:  received fast shutdown request
+^C2026-04-09 23:02:17.433 IST [9316] LOG:  starting PostgreSQL 15.17, compiled by Visual C++ build 1944, 64-bit
+2026-04-09 23:02:17.439 IST [9316] LOG:  listening on IPv6 address "::1", port 55432
+2026-04-09 23:02:17.439 IST [9316] LOG:  listening on IPv4 address "127.0.0.1", port 55432
+2026-04-09 23:02:17.502 IST [7560] LOG:  database system was interrupted; last known up at 2026-04-09 05:24:33 IST
+2026-04-09 23:02:17.781 IST [7560] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-04-09 23:02:17.785 IST [7560] LOG:  redo starts at 0/19CC5D8
+2026-04-09 23:02:17.786 IST [7560] LOG:  invalid record length at 0/19CC6C0: wanted 24, got 0
+2026-04-09 23:02:17.786 IST [7560] LOG:  redo done at 0/19CC688 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-04-09 23:02:17.797 IST [16248] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-04-09 23:02:17.813 IST [16248] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.025 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+2026-04-09 23:02:17.841 IST [9316] LOG:  database system is ready to accept connections
+2026-04-09 23:05:21.614 IST [16708] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-09 23:05:21.616 IST [9316] LOG:  server process (PID 5640) was terminated by exception 0xC000013A
+2026-04-09 23:05:21.616 IST [9316] DETAIL:  Failed process was running: SELECT "public"."property_managers"."id", "public"."property_managers"."propertyId", "public"."property_managers"."userId" FROM "public"."property_managers" WHERE "public"."property_managers"."userId" IN ($1) OFFSET $2
+2026-04-09 23:05:21.616 IST [9316] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-09 23:05:21.617 IST [9316] LOG:  terminating any other active server processes
 ^C
