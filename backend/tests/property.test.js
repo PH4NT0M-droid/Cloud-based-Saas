@@ -64,7 +64,7 @@ describe('Property API', () => {
     expect(res.body.data.id).toBe('prop-1');
   });
 
-  it('fetches properties for manager', async () => {
+  it('hides manager identities in properties response for manager role', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'manager-1',
       name: 'Manager One',
@@ -113,7 +113,7 @@ describe('Property API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.success).toBe(true);
     expect(Array.isArray(res.body.data)).toBe(true);
-    expect(res.body.data[0].managers).toHaveLength(1);
+    expect(res.body.data[0].managers).toHaveLength(0);
   });
 
   it('allows manager to access multiple assigned properties', async () => {

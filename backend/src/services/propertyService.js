@@ -47,7 +47,7 @@ const listProperties = async (user) => {
   }).then((properties) =>
     properties.map((property) => ({
       ...property,
-      managers: property.propertyManagers.map((assignment) => assignment.user),
+      managers: user.role === 'ADMIN' ? property.propertyManagers.map((assignment) => assignment.user) : [],
     })),
   );
 };
@@ -80,7 +80,7 @@ const getPropertyById = async (id, user) => {
 
   return {
     ...property,
-    managers: property.propertyManagers.map((assignment) => assignment.user),
+    managers: user.role === 'ADMIN' ? property.propertyManagers.map((assignment) => assignment.user) : [],
   };
 };
 

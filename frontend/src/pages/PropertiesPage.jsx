@@ -98,7 +98,7 @@ function PropertiesPage() {
             <p className="mt-3 text-sm text-slate-600">{property.description}</p>
             <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
               <span>{property.roomTypes?.length || 0} room types</span>
-              <span>{property.managers?.map((manager) => manager.name).join(', ') || 'Unassigned'}</span>
+              {user?.role === 'ADMIN' ? <span>{property.managers?.map((manager) => manager.name).join(', ') || 'Unassigned'}</span> : null}
             </div>
           </button>
         ))}

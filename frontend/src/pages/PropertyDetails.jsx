@@ -364,10 +364,12 @@ function PropertyDetails() {
             <h2 className="mt-2 text-3xl font-black text-slate-900">{property?.name}</h2>
             <p className="mt-2 text-sm text-slate-500">{property?.location} · {property?.description}</p>
           </div>
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
-            <p className="font-semibold text-slate-900">Managers</p>
-            <p>{property?.managers?.map((manager) => manager.name).join(', ') || 'Unassigned'}</p>
-          </div>
+          {user?.role === 'ADMIN' ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+              <p className="font-semibold text-slate-900">Managers</p>
+              <p>{property?.managers?.map((manager) => manager.name).join(', ') || 'Unassigned'}</p>
+            </div>
+          ) : null}
         </div>
 
       </section>
