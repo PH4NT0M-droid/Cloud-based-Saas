@@ -59,6 +59,17 @@ vi.mock('../components/ToastProvider', () => ({
   }),
 }));
 
+vi.mock('../hooks/useAuth', () => ({
+  default: () => ({
+    user: {
+      role: 'ADMIN',
+      permissions: {
+        canManageProperties: true,
+      },
+    },
+  }),
+}));
+
 describe('PropertyDetails page', () => {
   it('renders room, inventory and pricing sections', async () => {
     render(
@@ -72,6 +83,7 @@ describe('PropertyDetails page', () => {
     });
 
     expect(screen.getByText('Room management')).toBeTruthy();
+    expect(screen.getByText('Edit property information')).toBeTruthy();
     expect(screen.getByRole('button', { name: /add room/i })).toBeTruthy();
     expect(screen.getByText('Inventory grid')).toBeTruthy();
     expect(screen.getByText('Pricing grid')).toBeTruthy();

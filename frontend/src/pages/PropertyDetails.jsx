@@ -4,6 +4,7 @@ import propertyService from '../services/propertyService';
 import inventoryService from '../services/inventoryService';
 import rateService from '../services/rateService';
 import roomService from '../services/roomService';
+import useAuth from '../hooks/useAuth';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import ErrorBanner from '../components/ErrorBanner';
 import InventoryGrid from '../components/InventoryGrid';
@@ -50,6 +51,7 @@ const upsertByDate = (items = [], targetDate, patch) => {
 function PropertyDetails() {
   const { propertyId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { pushToast } = useToast();
   const [range, setRange] = useState(buildDateRange());
   const [loading, setLoading] = useState(true);
@@ -59,6 +61,7 @@ function PropertyDetails() {
   const [roomModalOpen, setRoomModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({ name: '', maxOccupancy: '2' });
+  const [propertyForm, setPropertyForm] = useState({ name: '', location: '', description: '' });
 
   const loadProperty = async (nextRange = range) => {
     try {
@@ -66,6 +69,11 @@ function PropertyDetails() {
       setError(null);
       const overview = await propertyService.getOverview(propertyId, nextRange);
       setProperty(overview);
+      setPropertyForm({
+        name: overview.name || '',
+        location: overview.location || '',
+        description: overview.description || '',
+      });
     } catch (loadError) {
       setError(loadError.response?.data?.message || 'Failed to load property');
     } finally {
@@ -89,6 +97,7 @@ function PropertyDetails() {
   }, [range]);
 
   const roomTypes = property?.roomTypes || [];
+  const canEditPropertyInfo = user?.role === 'ADMIN' || Boolean(user?.permissions?.canManageProperties);
 
   const inventoryMatrix = useMemo(() => {
     const matrix = {};
@@ -222,6 +231,43 @@ function PropertyDetails() {
     }
   };
 
+  const savePropertyInfo = async (event) => {
+    event.preventDefault();
+
+    try {
+      const updated = await propertyService.update(propertyId, {
+        name: propertyForm.name,
+        location: propertyForm.location,
+        description: propertyForm.description,
+      });
+
+      setProperty((current) => ({
+        ...current,
+        name: updated.name,
+        location: updated.location,
+        description: updated.description,
+      }));
+
+      pushToast({ type: 'success', title: 'Property updated', message: 'Property information was saved successfully.' });
+    } catch (updateError) {
+      pushToast({ type: 'error', title: 'Update failed', message: updateError.response?.data?.message || updateError.message });
+    }
+  };
+
+  const deletePropertyInfo = async () => {
+    if (!window.confirm('Delete this property? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await propertyService.remove(propertyId);
+      pushToast({ type: 'success', title: 'Property deleted', message: 'Property was deleted successfully.' });
+      navigate('/properties');
+    } catch (deleteError) {
+      pushToast({ type: 'error', title: 'Delete failed', message: deleteError.response?.data?.message || deleteError.message });
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -254,6 +300,46 @@ function PropertyDetails() {
         </div>
 
       </section>
+
+      {canEditPropertyInfo ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
+          <div className="mb-4">
+            <h3 className="text-xl font-black text-slate-900">Edit property information</h3>
+            <p className="text-sm text-slate-500">Update core property details from one place.</p>
+          </div>
+
+          <form className="grid gap-3 md:grid-cols-2" onSubmit={savePropertyInfo}>
+            <TextInput
+              label="Property name"
+              value={propertyForm.name}
+              onChange={(event) => setPropertyForm((current) => ({ ...current, name: event.target.value }))}
+              required
+            />
+            <TextInput
+              label="Location"
+              value={propertyForm.location}
+              onChange={(event) => setPropertyForm((current) => ({ ...current, location: event.target.value }))}
+              required
+            />
+            <div className="md:col-span-2">
+              <TextInput
+                label="Description"
+                value={propertyForm.description}
+                onChange={(event) => setPropertyForm((current) => ({ ...current, description: event.target.value }))}
+                required
+              />
+            </div>
+            <div className="flex gap-2 md:col-span-2">
+              <button type="submit" className="rounded-2xl bg-brand-700 px-4 py-2.5 font-semibold text-white hover:bg-brand-800">
+                Save property info
+              </button>
+              <button type="button" onClick={deletePropertyInfo} className="rounded-2xl bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700">
+                Delete property
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">

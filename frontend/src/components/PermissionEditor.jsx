@@ -1,8 +1,8 @@
 const permissionFields = [
   {
     key: 'canManageProperties',
-    label: 'Manage properties',
-    description: 'Create and edit property information.',
+    label: 'Edit property information',
+    description: 'Update property details like name, location, description, and related metadata.',
   },
   {
     key: 'canManageRooms',
