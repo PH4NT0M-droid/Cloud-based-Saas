@@ -59,8 +59,24 @@ function PropertyDetails() {
   const [error, setError] = useState(null);
   const [property, setProperty] = useState(null);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
-  const [roomForm, setRoomForm] = useState({ name: '', maxOccupancy: '2' });
+  const [roomForm, setRoomForm] = useState({
+    name: '',
+    basePrice: '0',
+    extraPersonPrice: '0',
+    baseCapacity: '1',
+    maxCapacity: '2',
+    baseInventory: '1',
+  });
+  const [bulkForm, setBulkForm] = useState({
+    roomTypeId: '',
+    type: 'price',
+    operation: 'set',
+    value: '0',
+    startDate: range.startDate,
+    endDate: range.endDate,
+  });
   const [propertyForm, setPropertyForm] = useState({ name: '', location: '', description: '' });
 
   const loadProperty = async (nextRange = range) => {
@@ -106,9 +122,18 @@ function PropertyDetails() {
       roomType.inventories.forEach((inventory) => {
         matrix[roomType.id][formatDateKey(inventory.date)] = inventory;
       });
+
+      dates.forEach((dateKey) => {
+        if (!matrix[roomType.id][dateKey]) {
+          matrix[roomType.id][dateKey] = {
+            date: dateKey,
+            availableRooms: roomType.baseInventory ?? 0,
+          };
+        }
+      });
     });
     return matrix;
-  }, [roomTypes]);
+  }, [dates, roomTypes]);
 
   const pricingMatrix = useMemo(() => {
     const matrix = {};
@@ -120,9 +145,20 @@ function PropertyDetails() {
           effectivePrice: rate.basePrice * rate.otaModifier,
         };
       });
+
+      dates.forEach((dateKey) => {
+        if (!matrix[roomType.id][dateKey]) {
+          matrix[roomType.id][dateKey] = {
+            date: dateKey,
+            basePrice: roomType.basePrice ?? 0,
+            otaModifier: 1,
+            effectivePrice: roomType.basePrice ?? 0,
+          };
+        }
+      });
     });
     return matrix;
-  }, [roomTypes]);
+  }, [dates, roomTypes]);
 
   const handleInventorySave = async ({ roomTypeId, date, availableRooms }) => {
     try {
@@ -185,14 +221,41 @@ function PropertyDetails() {
 
   const openCreateRoomModal = () => {
     setEditingRoom(null);
-    setRoomForm({ name: '', maxOccupancy: '2' });
+    setRoomForm({ name: '', basePrice: '0', extraPersonPrice: '0', baseCapacity: '1', maxCapacity: '2', baseInventory: '1' });
     setRoomModalOpen(true);
   };
 
   const openEditRoomModal = (roomType) => {
     setEditingRoom(roomType);
-    setRoomForm({ name: roomType.name, maxOccupancy: String(roomType.maxOccupancy) });
+    setRoomForm({
+      name: roomType.name,
+      basePrice: String(roomType.basePrice ?? 0),
+      extraPersonPrice: String(roomType.extraPersonPrice ?? 0),
+      baseCapacity: String(roomType.baseCapacity ?? 1),
+      maxCapacity: String(roomType.maxCapacity ?? roomType.maxOccupancy ?? 1),
+      baseInventory: String(roomType.baseInventory ?? 1),
+    });
     setRoomModalOpen(true);
+  };
+
+  const submitBulkUpdate = async (event) => {
+    event.preventDefault();
+    try {
+      await roomService.bulkUpdate({
+        roomTypeId: bulkForm.roomTypeId,
+        type: bulkForm.type,
+        operation: bulkForm.operation,
+        value: Number(bulkForm.value),
+        startDate: bulkForm.startDate,
+        endDate: bulkForm.endDate,
+      });
+
+      setBulkModalOpen(false);
+      pushToast({ type: 'success', title: 'Bulk update applied', message: 'Rates or inventory were updated for the selected date range.' });
+      await loadProperty(range);
+    } catch (bulkError) {
+      pushToast({ type: 'error', title: 'Bulk update failed', message: bulkError.response?.data?.message || bulkError.message });
+    }
   };
 
   const submitRoom = async (event) => {
@@ -202,14 +265,22 @@ function PropertyDetails() {
       if (editingRoom) {
         await roomService.update(editingRoom.id, {
           name: roomForm.name,
-          maxOccupancy: Number(roomForm.maxOccupancy),
+          basePrice: Number(roomForm.basePrice),
+          extraPersonPrice: Number(roomForm.extraPersonPrice),
+          baseCapacity: Number(roomForm.baseCapacity),
+          maxCapacity: Number(roomForm.maxCapacity),
+          baseInventory: Number(roomForm.baseInventory),
         });
         pushToast({ type: 'success', title: 'Room updated', message: `${roomForm.name} was updated.` });
       } else {
         await roomService.create({
           propertyId,
           name: roomForm.name,
-          maxOccupancy: Number(roomForm.maxOccupancy),
+          basePrice: Number(roomForm.basePrice),
+          extraPersonPrice: Number(roomForm.extraPersonPrice),
+          baseCapacity: Number(roomForm.baseCapacity),
+          maxCapacity: Number(roomForm.maxCapacity),
+          baseInventory: Number(roomForm.baseInventory),
         });
         pushToast({ type: 'success', title: 'Room added', message: `${roomForm.name} is now available.` });
       }
@@ -356,7 +427,11 @@ function PropertyDetails() {
           {roomTypes.map((roomType) => (
             <div key={roomType.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">{roomType.name}</p>
-              <p className="mt-1 text-xs text-slate-500">Occupancy cap {roomType.maxOccupancy}</p>
+              <p className="mt-1 text-xs text-slate-500">Capacity {roomType.baseCapacity} to {roomType.maxCapacity}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Base {formatCurrency(roomType.basePrice || 0)} + extra {formatCurrency(roomType.extraPersonPrice || 0)} / person
+              </p>
+              <p className="mt-1 text-xs text-slate-500">Base inventory {roomType.baseInventory ?? 0}</p>
               <div className="mt-3 flex gap-2">
                 <button onClick={() => openEditRoomModal(roomType)} className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
                   Edit room
@@ -394,6 +469,20 @@ function PropertyDetails() {
           >
             Refresh grids
           </button>
+          <button
+            onClick={() => {
+              setBulkForm((current) => ({
+                ...current,
+                roomTypeId: roomTypes[0]?.id || '',
+                startDate: range.startDate,
+                endDate: range.endDate,
+              }));
+              setBulkModalOpen(true);
+            }}
+            className="self-end rounded-2xl bg-slate-900 px-4 py-2.5 font-semibold text-white hover:bg-slate-800"
+          >
+            Bulk update
+          </button>
         </div>
       </section>
 
@@ -409,14 +498,125 @@ function PropertyDetails() {
             required
           />
           <TextInput
-            label="Max occupancy"
+            label="Base price"
             type="number"
-            value={roomForm.maxOccupancy}
-            onChange={(event) => setRoomForm((current) => ({ ...current, maxOccupancy: event.target.value }))}
+            min="0"
+            step="0.01"
+            value={roomForm.basePrice}
+            onChange={(event) => setRoomForm((current) => ({ ...current, basePrice: event.target.value }))}
+            required
+          />
+          <TextInput
+            label="Extra person price"
+            type="number"
+            min="0"
+            step="0.01"
+            value={roomForm.extraPersonPrice}
+            onChange={(event) => setRoomForm((current) => ({ ...current, extraPersonPrice: event.target.value }))}
+            required
+          />
+          <TextInput
+            label="Base capacity"
+            type="number"
+            min="1"
+            value={roomForm.baseCapacity}
+            onChange={(event) => setRoomForm((current) => ({ ...current, baseCapacity: event.target.value }))}
+            required
+          />
+          <TextInput
+            label="Max capacity"
+            type="number"
+            min="1"
+            value={roomForm.maxCapacity}
+            onChange={(event) => setRoomForm((current) => ({ ...current, maxCapacity: event.target.value }))}
+            required
+          />
+          <TextInput
+            label="Base inventory"
+            type="number"
+            min="0"
+            value={roomForm.baseInventory}
+            onChange={(event) => setRoomForm((current) => ({ ...current, baseInventory: event.target.value }))}
             required
           />
           <button className="w-full rounded-2xl bg-brand-700 py-3 font-semibold text-white hover:bg-brand-800">
             {editingRoom ? 'Save room' : 'Create room'}
+          </button>
+        </form>
+      </Modal>
+
+      <Modal open={bulkModalOpen} title="Bulk update rates or inventory" onClose={() => setBulkModalOpen(false)}>
+        <form className="space-y-3" onSubmit={submitBulkUpdate}>
+          <label className="space-y-1 text-sm">
+            <span className="font-semibold text-slate-700">Room type</span>
+            <select
+              value={bulkForm.roomTypeId}
+              onChange={(event) => setBulkForm((current) => ({ ...current, roomTypeId: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              required
+            >
+              <option value="">Select room type</option>
+              {roomTypes.map((roomType) => (
+                <option key={roomType.id} value={roomType.id}>{roomType.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-semibold text-slate-700">Type</span>
+              <select
+                value={bulkForm.type}
+                onChange={(event) => setBulkForm((current) => ({ ...current, type: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              >
+                <option value="price">Price</option>
+                <option value="inventory">Inventory</option>
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-semibold text-slate-700">Operation</span>
+              <select
+                value={bulkForm.operation}
+                onChange={(event) => setBulkForm((current) => ({ ...current, operation: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              >
+                <option value="set">Set to value</option>
+                <option value="increase">Increase by value</option>
+                <option value="decrease">Decrease by value</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label="Start date"
+              type="date"
+              value={bulkForm.startDate}
+              onChange={(event) => setBulkForm((current) => ({ ...current, startDate: event.target.value }))}
+              required
+            />
+            <TextInput
+              label="End date"
+              type="date"
+              value={bulkForm.endDate}
+              onChange={(event) => setBulkForm((current) => ({ ...current, endDate: event.target.value }))}
+              required
+            />
+          </div>
+
+          <TextInput
+            label="Value"
+            type="number"
+            min="0"
+            step="0.01"
+            value={bulkForm.value}
+            onChange={(event) => setBulkForm((current) => ({ ...current, value: event.target.value }))}
+            required
+          />
+
+          <button type="submit" className="w-full rounded-2xl bg-brand-700 py-3 font-semibold text-white hover:bg-brand-800">
+            Apply bulk update
           </button>
         </form>
       </Modal>

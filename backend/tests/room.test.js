@@ -62,6 +62,10 @@ describe('Room API', () => {
       id: 'room-1',
       propertyId: 'prop-1',
       name: 'Deluxe Room',
+      basePrice: 120,
+      extraPersonPrice: 20,
+      baseCapacity: 2,
+      maxCapacity: 3,
       maxOccupancy: 3,
       createdAt: new Date(),
     });
@@ -72,7 +76,10 @@ describe('Room API', () => {
       .send({
         propertyId: '11111111-1111-4111-8111-111111111111',
         name: 'Deluxe Room',
-        maxOccupancy: 3,
+        basePrice: 120,
+        extraPersonPrice: 20,
+        baseCapacity: 2,
+        maxCapacity: 3,
       });
 
     expect(res.statusCode).toBe(201);

@@ -1,11 +1,12 @@
 const express = require('express');
 const bookingController = require('../controllers/bookingController');
-const { authenticate, authorizeRoles } = require('../middlewares/authMiddleware');
+const { authenticate, authorizeRoles, authorizeManageBookings } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequestMiddleware');
 const {
   bookingIdValidator,
   listBookingsValidator,
   updateBookingStatusValidator,
+  createManualBookingValidator,
   syncBookingsValidator,
 } = require('../validators/bookingValidators');
 
@@ -13,15 +14,56 @@ const router = express.Router();
 
 router.use(authenticate);
 
-router.get('/', authorizeRoles('ADMIN', 'MANAGER', 'STAFF'), listBookingsValidator, validateRequest, bookingController.listBookings);
-router.get('/:id', authorizeRoles('ADMIN', 'MANAGER', 'STAFF'), bookingIdValidator, validateRequest, bookingController.getBookingById);
+router.get(
+  '/',
+  authorizeRoles('ADMIN', 'MANAGER', 'STAFF'),
+  authorizeManageBookings,
+  listBookingsValidator,
+  validateRequest,
+  bookingController.listBookings,
+);
+router.get(
+  '/:id',
+  authorizeRoles('ADMIN', 'MANAGER', 'STAFF'),
+  authorizeManageBookings,
+  bookingIdValidator,
+  validateRequest,
+  bookingController.getBookingById,
+);
+router.post(
+  '/manual',
+  authorizeRoles('ADMIN', 'MANAGER'),
+  authorizeManageBookings,
+  createManualBookingValidator,
+  validateRequest,
+  bookingController.createManualBooking,
+);
+router.post(
+  '/',
+  authorizeRoles('ADMIN', 'MANAGER'),
+  authorizeManageBookings,
+  createManualBookingValidator,
+  validateRequest,
+  bookingController.createManualBooking,
+);
+router.post(
+  '/create',
+  authorizeRoles('ADMIN', 'MANAGER'),
+  authorizeManageBookings,
+  createManualBookingValidator,
+  validateRequest,
+  bookingController.createManualBooking,
+);
 router.put(
   '/:id/status',
   authorizeRoles('ADMIN', 'MANAGER'),
+  authorizeManageBookings,
   updateBookingStatusValidator,
   validateRequest,
   bookingController.updateBookingStatus,
 );
+router.put('/:id', authorizeRoles('ADMIN', 'MANAGER'), authorizeManageBookings, updateBookingStatusValidator, validateRequest, bookingController.updateBookingStatus);
+router.delete('/:id', authorizeRoles('ADMIN', 'MANAGER'), authorizeManageBookings, bookingIdValidator, validateRequest, bookingController.cancelBooking);
 router.post('/sync', authorizeRoles('ADMIN'), syncBookingsValidator, validateRequest, bookingController.syncBookings);
 
 module.exports = router;

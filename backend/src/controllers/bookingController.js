@@ -36,6 +36,30 @@ const updateBookingStatus = async (req, res, next) => {
   }
 };
 
+const createManualBooking = async (req, res, next) => {
+  try {
+    const booking = await bookingService.createManualBooking(req.body, req.user);
+    return res.status(201).json({
+      success: true,
+      data: booking,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const cancelBooking = async (req, res, next) => {
+  try {
+    const booking = await bookingService.updateBookingStatus(req.params.id, 'CANCELLED', req.user);
+    return res.status(200).json({
+      success: true,
+      data: booking,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const syncBookings = async (req, res, next) => {
   try {
     const result = await bookingService.syncBookingsFromOtas(req.body.otas, req.user);
@@ -52,5 +76,7 @@ module.exports = {
   listBookings,
   getBookingById,
   updateBookingStatus,
+  createManualBooking,
+  cancelBooking,
   syncBookings,
 };

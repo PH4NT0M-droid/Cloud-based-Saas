@@ -19,6 +19,11 @@ const permissionFields = [
     label: 'Manage inventory',
     description: 'Adjust availability in the calendar grid.',
   },
+  {
+    key: 'manage_bookings',
+    label: 'Can manage bookings',
+    description: 'View bookings, create manual bookings, and update or cancel booking records.',
+  },
 ];
 
 function PermissionEditor({ value, onChange }) {

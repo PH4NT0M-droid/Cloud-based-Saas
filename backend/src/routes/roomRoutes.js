@@ -7,6 +7,7 @@ const {
   updateRoomValidator,
   listRoomsValidator,
   roomIdValidator,
+  bulkUpdateRoomValidator,
 } = require('../validators/roomValidators');
 
 const router = express.Router();
@@ -14,6 +15,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.post('/', authorizeRoles('ADMIN', 'MANAGER'), createRoomValidator, validateRequest, roomController.createRoomType);
+router.post('/bulk-update', authorizeRoles('ADMIN', 'MANAGER'), bulkUpdateRoomValidator, validateRequest, roomController.bulkUpdateRoomType);
 router.get('/', authorizeRoles('ADMIN', 'MANAGER', 'STAFF'), listRoomsValidator, validateRequest, roomController.listRoomTypes);
 router.put('/:id', authorizeRoles('ADMIN', 'MANAGER'), updateRoomValidator, validateRequest, roomController.updateRoomType);
 router.delete('/:id', authorizeRoles('ADMIN', 'MANAGER'), roomIdValidator, validateRequest, roomController.deleteRoomType);

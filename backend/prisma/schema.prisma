@@ -65,6 +65,11 @@ model RoomType {
   property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   name         String
   maxOccupancy Int
+  basePrice        Float @default(0) @map("base_price")
+  extraPersonPrice Float @default(0) @map("extra_person_price")
+  baseCapacity     Int   @default(1) @map("base_capacity")
+  maxCapacity      Int   @default(1) @map("max_capacity")
+  baseInventory    Int   @default(1) @map("base_inventory")
   createdAt    DateTime @default(now())
   inventories  Inventory[]
   rates        Rate[]
@@ -111,6 +116,7 @@ model Booking {
   checkIn   DateTime
   checkOut  DateTime
   guestName String
+  guestsCount Int          @default(1) @map("guests_count")
   status    BookingStatus @default(CONFIRMED)
   totalPrice Float?
   createdAt DateTime      @default(now())
@@ -130,4 +136,18 @@ model Notification {
 
   @@index([createdAt])
   @@map("notifications")
+}
+
+model Promotion {
+  id              String   @id @default(uuid())
+  name            String
+  discountPercent Float    @map("discount_percent")
+  season          String?
+  propertyIds     Json?    @map("property_ids")
+  startDate       DateTime? @map("start_date")
+  endDate         DateTime? @map("end_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("promotions")
 }

@@ -86,9 +86,9 @@ function PricingGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoo
                           disabled={loadingRoomTypeId === roomType.id}
                           className="flex h-16 w-28 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 transition hover:border-accent-300 hover:bg-accent-50"
                         >
-                          <span className="text-sm font-bold text-slate-900">{formatCurrency(cell.basePrice ?? 0)}</span>
+                          <span className="text-sm font-bold text-slate-900">{formatCurrency(cell.basePrice ?? roomType.basePrice ?? 0)}</span>
                           <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                            eff {formatCurrency(cell.effectivePrice ?? cell.basePrice ?? 0)}
+                            eff {formatCurrency(cell.effectivePrice ?? cell.basePrice ?? roomType.basePrice ?? 0)}
                           </span>
                         </button>
                       )}

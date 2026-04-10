@@ -1,7 +1,7 @@
 const { verifyToken } = require('../utils/jwt');
 const ApiError = require('../utils/ApiError');
 const prisma = require('../config/prisma');
-const { normalizePermissions } = require('../services/accessControl');
+const { normalizePermissions, canManageBookings } = require('../services/accessControl');
 
 const sanitizeAuthenticatedUser = (user) => {
   const mappedProperties = (user.propertyManagers || []).map((assignment) => assignment.property);
@@ -65,7 +65,16 @@ const authorizeRoles = (...roles) => (req, res, next) => {
   return next();
 };
 
+const authorizeManageBookings = (req, res, next) => {
+  if (!canManageBookings(req.user)) {
+    return next(new ApiError(403, 'You are not authorized to manage bookings'));
+  }
+
+  return next();
+};
+
 module.exports = {
   authenticate,
   authorizeRoles,
+  authorizeManageBookings,
 };

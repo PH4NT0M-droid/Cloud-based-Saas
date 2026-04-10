@@ -91,6 +91,7 @@ const createManager = async ({ name, email, password, permissions, propertyIds =
 
 const updateManager = async (id, payload) => {
   const existing = await assertManagerExists(id);
+  const nextPassword = typeof payload.password === 'string' ? payload.password.trim() : '';
 
   if (payload.email && payload.email !== existing.email) {
     const taken = await prisma.user.findUnique({ where: { email: payload.email } });
@@ -105,8 +106,8 @@ const updateManager = async (id, payload) => {
     ...(payload.permissions !== undefined ? { permissions: normalizePermissions(payload.permissions) } : {}),
   };
 
-  if (payload.password) {
-    updateData.passwordHash = await bcrypt.hash(payload.password, 12);
+  if (nextPassword) {
+    updateData.passwordHash = await bcrypt.hash(nextPassword, 12);
   }
 
   await prisma.$transaction(async (tx) => {

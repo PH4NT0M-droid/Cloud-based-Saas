@@ -29,7 +29,14 @@ function App() {
         <Route path="/properties/:propertyId" element={<PropertyDetails />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/rates" element={<RatesPage />} />
-        <Route path="/bookings" element={<BookingsPage />} />
+        <Route
+          path="/bookings"
+          element={
+            <ProtectedRoute permission="manage_bookings">
+              <BookingsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/promotions" element={<PromotionsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route

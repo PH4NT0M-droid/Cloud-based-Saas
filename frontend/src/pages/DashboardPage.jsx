@@ -19,7 +19,8 @@ function DashboardPage() {
   }, []);
 
   const metrics = useMemo(() => {
-    const revenue = bookings.reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0);
+    const confirmedBookings = bookings.filter((booking) => booking.status !== 'CANCELLED');
+    const revenue = confirmedBookings.reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0);
     const activeManagers = new Set(
       properties.flatMap((property) => (property.managers || []).map((manager) => manager.id)).filter(Boolean),
     ).size;
@@ -27,7 +28,7 @@ function DashboardPage() {
     return {
       properties: properties.length,
       rooms: properties.reduce((sum, property) => sum + (property.roomTypes?.length || 0), 0),
-      bookings: bookings.length,
+      bookings: confirmedBookings.length,
       revenue,
       activeManagers,
     };

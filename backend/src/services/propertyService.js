@@ -31,7 +31,17 @@ const listProperties = async (user) => {
         },
       },
       roomTypes: {
-        select: { id: true, name: true, maxOccupancy: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          maxOccupancy: true,
+          basePrice: true,
+          extraPersonPrice: true,
+          baseCapacity: true,
+          maxCapacity: true,
+          baseInventory: true,
+          createdAt: true,
+        },
       },
     },
   }).then((properties) =>
@@ -81,6 +91,11 @@ const getPropertyOverview = async (id, user) => {
     id: roomType.id,
     name: roomType.name,
     maxOccupancy: roomType.maxOccupancy,
+    basePrice: roomType.basePrice,
+    extraPersonPrice: roomType.extraPersonPrice,
+    baseCapacity: roomType.baseCapacity,
+    maxCapacity: roomType.maxCapacity,
+    baseInventory: roomType.baseInventory,
     inventories: roomType.inventories.map((inventory) => ({
       id: inventory.id,
       date: inventory.date,

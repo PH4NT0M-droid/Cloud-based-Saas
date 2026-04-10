@@ -47,6 +47,106 @@ const enumerateDatesExclusive = (startDateInput, endDateInput) => {
   return dates;
 };
 
+const supportsTransaction = (db) => typeof db?.$transaction === 'function';
+
+const getRoomTypeBaseInventory = async (tx, roomTypeId) => {
+  const roomType = await tx.roomType.findUnique({
+    where: { id: roomTypeId },
+    select: { id: true, baseInventory: true },
+  });
+
+  if (!roomType) {
+    throw new ApiError(404, 'Room type not found');
+  }
+
+  return Number(roomType.baseInventory ?? 0);
+};
+
+const reduceInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) => {
+  const dates = enumerateDatesExclusive(startDate, endDate);
+  const baseInventory = await getRoomTypeBaseInventory(tx, roomTypeId);
+
+  for (const date of dates) {
+    const existing = await tx.inventory.findUnique({
+      where: {
+        roomTypeId_date: {
+          roomTypeId,
+          date,
+        },
+      },
+      select: { id: true, availableRooms: true },
+    });
+
+    const availableRooms = existing ? Number(existing.availableRooms) : baseInventory;
+    if (availableRooms <= 0) {
+      throw new ApiError(409, 'Insufficient inventory for one or more dates');
+    }
+
+    await tx.inventory.upsert({
+      where: {
+        roomTypeId_date: {
+          roomTypeId,
+          date,
+        },
+      },
+      create: {
+        roomTypeId,
+        date,
+        availableRooms: availableRooms - 1,
+      },
+      update: {
+        availableRooms: availableRooms - 1,
+      },
+    });
+  }
+
+  return {
+    roomTypeId,
+    reducedDays: dates.length,
+  };
+};
+
+const restoreInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) => {
+  const dates = enumerateDatesExclusive(startDate, endDate);
+  const baseInventory = await getRoomTypeBaseInventory(tx, roomTypeId);
+
+  for (const date of dates) {
+    const existing = await tx.inventory.findUnique({
+      where: {
+        roomTypeId_date: {
+          roomTypeId,
+          date,
+        },
+      },
+      select: { id: true, availableRooms: true },
+    });
+
+    const availableRooms = existing ? Number(existing.availableRooms) : baseInventory;
+
+    await tx.inventory.upsert({
+      where: {
+        roomTypeId_date: {
+          roomTypeId,
+          date,
+        },
+      },
+      create: {
+        roomTypeId,
+        date,
+        availableRooms: availableRooms + 1,
+      },
+      update: {
+        availableRooms: availableRooms + 1,
+      },
+    });
+  }
+
+  return {
+    roomTypeId,
+    restoredDays: dates.length,
+  };
+};
+
 const updateInventory = async (payload, user, txClient) => {
   const db = txClient || prisma;
   const roomType = await db.roomType.findUnique({
@@ -187,109 +287,20 @@ const getInventoryCalendar = async ({ roomTypeId, startDate, endDate }, user) =>
 
 const reduceInventory = async (roomTypeId, startDate, endDate, txClient) => {
   const db = txClient || prisma;
-  const dates = enumerateDatesExclusive(startDate, endDate);
-  const rangeStart = dates[0];
-  const rangeEnd = new Date(dates[dates.length - 1]);
-  rangeEnd.setUTCHours(23, 59, 59, 999);
+  if (supportsTransaction(db)) {
+    return db.$transaction((tx) => reduceInventoryInTransaction(tx, roomTypeId, startDate, endDate));
+  }
 
-  return db.$transaction(async (tx) => {
-    const totalDaysConfigured = await tx.inventory.count({
-      where: {
-        roomTypeId,
-        date: {
-          gte: rangeStart,
-          lte: rangeEnd,
-        },
-      },
-    });
-
-    if (totalDaysConfigured !== dates.length) {
-      throw new ApiError(409, 'Inventory is not configured for all requested dates');
-    }
-
-    const updated = await tx.inventory.updateMany({
-      where: {
-        roomTypeId,
-        date: {
-          gte: rangeStart,
-          lte: rangeEnd,
-        },
-        availableRooms: {
-          gt: 0,
-        },
-      },
-      data: {
-        availableRooms: {
-          decrement: 1,
-        },
-      },
-    });
-
-    if (updated.count !== dates.length) {
-      throw new ApiError(409, 'Insufficient inventory for one or more dates');
-    }
-
-    return {
-      roomTypeId,
-      reducedDays: updated.count,
-    };
-  });
+  return reduceInventoryInTransaction(db, roomTypeId, startDate, endDate);
 };
 
 const restoreInventory = async (roomTypeId, startDate, endDate, txClient) => {
   const db = txClient || prisma;
-  const dates = enumerateDatesExclusive(startDate, endDate);
-  const rangeStart = dates[0];
-  const rangeEnd = new Date(dates[dates.length - 1]);
-  rangeEnd.setUTCHours(23, 59, 59, 999);
+  if (supportsTransaction(db)) {
+    return db.$transaction((tx) => restoreInventoryInTransaction(tx, roomTypeId, startDate, endDate));
+  }
 
-  return db.$transaction(async (tx) => {
-    await tx.inventory.updateMany({
-      where: {
-        roomTypeId,
-        date: {
-          gte: rangeStart,
-          lte: rangeEnd,
-        },
-      },
-      data: {
-        availableRooms: {
-          increment: 1,
-        },
-      },
-    });
-
-    const existing = await tx.inventory.findMany({
-      where: {
-        roomTypeId,
-        date: {
-          gte: rangeStart,
-          lte: rangeEnd,
-        },
-      },
-      select: {
-        date: true,
-      },
-    });
-
-    const existingKeys = new Set(existing.map((item) => item.date.toISOString().split('T')[0]));
-    const missing = dates
-      .filter((date) => !existingKeys.has(date.toISOString().split('T')[0]))
-      .map((date) => ({
-        roomTypeId,
-        date,
-        availableRooms: 1,
-      }));
-
-    if (missing.length > 0) {
-      await tx.inventory.createMany({ data: missing });
-    }
-
-    return {
-      roomTypeId,
-      restoredDays: dates.length,
-    };
-  });
+  return restoreInventoryInTransaction(db, roomTypeId, startDate, endDate);
 };
 
 module.exports = {

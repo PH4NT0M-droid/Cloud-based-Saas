@@ -9,6 +9,7 @@ const rateRoutes = require('./rateRoutes');
 const otaRoutes = require('./otaRoutes');
 const bookingRoutes = require('./bookingRoutes');
 const analyticsRoutes = require('./analyticsRoutes');
+const promotionRoutes = require('./promotionRoutes');
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use('/rates', rateRoutes);
 router.use('/ota', otaRoutes);
 router.use('/bookings', bookingRoutes);
 router.use('/analytics', analyticsRoutes);
+router.use('/promotions', promotionRoutes);
 
 module.exports = router;

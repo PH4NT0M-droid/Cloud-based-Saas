@@ -14,7 +14,9 @@ const links = [
 
 function Sidebar() {
   const { user } = useAuth();
-  const visibleLinks = links.filter((link) => !link.roles || link.roles.includes(user?.role));
+  const visibleLinks = links
+    .filter((link) => !link.roles || link.roles.includes(user?.role))
+    .filter((link) => (link.to === '/bookings' ? user?.role === 'ADMIN' || Boolean(user?.permissions?.manage_bookings) : true));
 
   return (
     <aside className="w-full border-b border-white/20 bg-slate-950/95 p-4 text-white shadow-2xl md:w-72 md:border-b-0 md:border-r md:border-white/10">

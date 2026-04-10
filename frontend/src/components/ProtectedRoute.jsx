@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 
-function ProtectedRoute({ children, roles = [] }) {
+function ProtectedRoute({ children, roles = [], permission }) {
   const { isAuthenticated, user } = useAuth();
   const location = useLocation();
 
@@ -10,6 +10,10 @@ function ProtectedRoute({ children, roles = [] }) {
   }
 
   if (roles && roles.length > 0 && !roles.includes(user?.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (permission && user?.role !== 'ADMIN' && !user?.permissions?.[permission]) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -52,7 +52,7 @@ function InventoryGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingR
               <tr key={roomType.id} className="border-b border-slate-100">
                 <td className="sticky left-0 z-10 border-r border-slate-100 bg-white px-4 py-3 font-semibold text-slate-900">
                   <div>{roomType.name}</div>
-                  <div className="text-xs font-medium text-slate-500">Max occupancy {roomType.maxOccupancy}</div>
+                  <div className="text-xs font-medium text-slate-500">Default inventory {roomType.baseInventory ?? 0}</div>
                 </td>
                 {visibleDates.map((dateKey) => {
                   const cell = dataByRoomType?.[roomType.id]?.[dateKey] || {};
@@ -85,7 +85,7 @@ function InventoryGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingR
                           disabled={loadingRoomTypeId === roomType.id}
                           className="flex h-12 w-24 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 transition hover:border-brand-300 hover:bg-brand-50"
                         >
-                          <span className="text-base font-bold text-slate-900">{cell.availableRooms ?? '—'}</span>
+                          <span className="text-base font-bold text-slate-900">{cell.availableRooms ?? roomType.baseInventory ?? 0}</span>
                           <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">rooms</span>
                         </button>
                       )}

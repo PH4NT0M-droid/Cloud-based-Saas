@@ -68,12 +68,13 @@ describe('Booking API', () => {
             canManageRooms: false,
             canManagePricing: false,
             canManageInventory: true,
+            manage_bookings: true,
           },
           managedProperties: [{ id: 'prop-1', name: 'Sea View Stays', location: 'Goa' }],
         });
       }
 
-      return Promise.resolve({ id: 'staff-1', role: 'STAFF', permissions: {}, managedProperties: [] });
+      return Promise.resolve({ id: 'staff-1', role: 'STAFF', permissions: { manage_bookings: false }, managedProperties: [] });
     });
   });
 
@@ -96,7 +97,13 @@ describe('Booking API', () => {
 
     const tx = {
       roomType: {
-        findUnique: jest.fn().mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111', maxOccupancy: 10 }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          maxOccupancy: 10,
+          basePrice: 100,
+          propertyId: 'prop-1',
+          baseInventory: 2,
+        }),
       },
       rate: {
         findMany: jest.fn().mockResolvedValue([
@@ -109,11 +116,17 @@ describe('Booking API', () => {
           { date: new Date('2026-10-01T00:00:00.000Z'), availableRooms: 1 },
           { date: new Date('2026-10-02T00:00:00.000Z'), availableRooms: 1 },
         ]),
-        count: jest.fn().mockResolvedValue(2),
-        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ availableRooms: 2 })
+          .mockResolvedValueOnce({ availableRooms: 2 }),
+        upsert: jest.fn().mockResolvedValue({}),
       },
       booking: {
         create: jest.fn().mockResolvedValue({ id: 'b-1' }),
+      },
+      promotion: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn().mockImplementation(async (callback) => callback(tx)),
     };
@@ -164,16 +177,24 @@ describe('Booking API', () => {
     });
 
     const tx = {
+      roomType: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          baseInventory: 2,
+        }),
+      },
       inventory: {
-        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
-        findMany: jest.fn().mockResolvedValue([
-          { date: new Date('2026-10-01T00:00:00.000Z') },
-          { date: new Date('2026-10-02T00:00:00.000Z') },
-        ]),
-        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ availableRooms: 0 })
+          .mockResolvedValueOnce({ availableRooms: 0 }),
+        upsert: jest.fn().mockResolvedValue({}),
       },
       booking: {
         update: jest.fn().mockResolvedValue({ id: 'b-1', status: 'CANCELLED' }),
+      },
+      promotion: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn().mockImplementation(async (callback) => callback(tx)),
     };
@@ -199,7 +220,7 @@ describe('Booking API', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('staff can view bookings', async () => {
+  it('blocks bookings list when manage_bookings is false', async () => {
     prisma.booking.findMany.mockResolvedValue([
       {
         id: 'b-1',
@@ -209,8 +230,57 @@ describe('Booking API', () => {
 
     const res = await request(app).get('/api/bookings').set('Authorization', `Bearer ${staffToken}`);
 
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('creates manual booking for manager with manage_bookings permission', async () => {
+    prisma.roomType.findUnique.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      property: { id: 'prop-1', name: 'Sea View Stays', location: 'Goa' },
+      basePrice: 100,
+      extraPersonPrice: 25,
+      baseCapacity: 2,
+      maxCapacity: 4,
+    });
+
+    const tx = {
+      roomType: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          baseInventory: 2,
+        }),
+      },
+      inventory: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ availableRooms: 2 })
+          .mockResolvedValueOnce({ availableRooms: 2 }),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      booking: {
+        create: jest.fn().mockResolvedValue({ id: 'manual-1' }),
+      },
+      promotion: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      $transaction: jest.fn().mockImplementation(async (callback) => callback(tx)),
+    };
+
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    const res = await request(app)
+      .post('/api/bookings/manual')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        roomTypeId: '11111111-1111-4111-8111-111111111111',
+        startDate: '2026-10-01',
+        endDate: '2026-10-03',
+        guestName: 'Manual Guest',
+        guestsCount: 3,
+      });
+
+    expect(res.statusCode).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveLength(1);
   });
 });

@@ -48,9 +48,22 @@ const deleteRoomType = async (req, res, next) => {
   }
 };
 
+const bulkUpdateRoomType = async (req, res, next) => {
+  try {
+    const result = await roomService.bulkUpdateRoomType(req.body, req.user);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createRoomType,
   listRoomTypes,
   updateRoomType,
   deleteRoomType,
+  bulkUpdateRoomType,
 };

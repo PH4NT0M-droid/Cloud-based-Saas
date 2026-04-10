@@ -77,6 +77,7 @@ const ensureDefaultAdmin = async () => {
         canManageRooms: true,
         canManagePricing: true,
         canManageInventory: true,
+        manage_bookings: true,
       }),
     },
   });

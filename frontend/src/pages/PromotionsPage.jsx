@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import DataTable from '../components/DataTable';
 import TextInput from '../components/forms/TextInput';
 import propertyService from '../services/propertyService';
+import promotionService from '../services/promotionService';
+import { useToast } from '../components/ToastProvider';
 
 function PromotionsPage() {
+  const { pushToast } = useToast();
   const [promotions, setPromotions] = useState([]);
   const [properties, setProperties] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -11,6 +14,7 @@ function PromotionsPage() {
 
   useEffect(() => {
     propertyService.getAll().then((items) => setProperties(items)).catch(() => setProperties([]));
+    promotionService.getAll().then((items) => setPromotions(items)).catch(() => setPromotions([]));
   }, []);
 
   const propertyNameMap = useMemo(
@@ -22,35 +26,49 @@ function PromotionsPage() {
     [properties],
   );
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
+    try {
+      if (editingId) {
+        const updated = await promotionService.update(editingId, form);
+        setPromotions((prev) => prev.map((item) => (item.id === editingId ? updated : item)));
+        setEditingId(null);
+        pushToast({ type: 'success', title: 'Promotion updated', message: 'Promotion changes were saved.' });
+      } else {
+        const created = await promotionService.create(form);
+        setPromotions((prev) => [created, ...prev]);
+        pushToast({ type: 'success', title: 'Promotion created', message: 'Promotion was created successfully.' });
+      }
 
-    if (editingId) {
-      setPromotions((prev) => prev.map((item) => (item.id === editingId ? { ...item, ...form } : item)));
-      setEditingId(null);
-    } else {
-      setPromotions((prev) => [...prev, { ...form, id: crypto.randomUUID() }]);
+      setForm({ name: '', discount: 10, season: '', propertyIds: [] });
+    } catch (error) {
+      pushToast({ type: 'error', title: 'Save failed', message: error.response?.data?.message || error.message });
     }
-
-    setForm({ name: '', discount: 10, season: '', propertyIds: [] });
   };
 
   const onEdit = (promotion) => {
     setEditingId(promotion.id);
     setForm({
       name: promotion.name,
-      discount: promotion.discount,
+      discount: promotion.discountPercent ?? promotion.discount ?? 0,
       season: promotion.season,
       propertyIds: promotion.propertyIds || [],
     });
   };
 
-  const onDelete = (promotionId) => {
-    setPromotions((prev) => prev.filter((promotion) => promotion.id !== promotionId));
+  const onDelete = async (promotionId) => {
+    try {
+      await promotionService.remove(promotionId);
+      setPromotions((prev) => prev.filter((promotion) => promotion.id !== promotionId));
 
-    if (editingId === promotionId) {
-      setEditingId(null);
-      setForm({ name: '', discount: 10, season: '', propertyIds: [] });
+      if (editingId === promotionId) {
+        setEditingId(null);
+        setForm({ name: '', discount: 10, season: '', propertyIds: [] });
+      }
+
+      pushToast({ type: 'success', title: 'Promotion deleted', message: 'Promotion was removed.' });
+    } catch (error) {
+      pushToast({ type: 'error', title: 'Delete failed', message: error.response?.data?.message || error.message });
     }
   };
 
@@ -99,7 +117,7 @@ function PromotionsPage() {
       <DataTable
         columns={[
           { key: 'name', label: 'Promotion' },
-          { key: 'discount', label: 'Discount %' },
+          { key: 'discountPercent', label: 'Discount %' },
           { key: 'season', label: 'Season' },
           {
             key: 'properties',

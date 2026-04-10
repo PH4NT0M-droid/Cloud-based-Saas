@@ -9,6 +9,7 @@ const initialPermissions = {
   canManageRooms: false,
   canManagePricing: false,
   canManageInventory: false,
+  manage_bookings: false,
 };
 
 function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAssignProperty, onRemoveProperty, loading }) {
@@ -171,7 +172,7 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
         </table>
       </div>
 
-      <Modal open={open} title={editingUser ? 'Edit manager' : 'Create manager'} onClose={reset}>
+      <Modal open={open} title={editingUser ? 'Edit manager' : 'Create manager'} onClose={reset} panelClassName="max-w-3xl">
         <form className="space-y-4" onSubmit={submit}>
           <TextInput label="Name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
           <TextInput label="Email" type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} required />

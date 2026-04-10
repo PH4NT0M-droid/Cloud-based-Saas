@@ -1,9 +1,11 @@
 const prisma = require('../config/prisma');
+const { randomBytes } = require('crypto');
 const ApiError = require('../utils/ApiError');
 const otaService = require('./ota/otaService');
 const { reduceInventory, restoreInventory } = require('./inventoryService');
 const notificationService = require('./notificationService');
-const { assertPropertyAccess } = require('./accessControl');
+const { assertPropertyAccess, canManageBookings } = require('./accessControl');
+const { getApplicableDiscountPercent } = require('./promotionService');
 
 const normalizeToUtcDate = (input) => {
   const date = new Date(input);
@@ -57,6 +59,15 @@ const computeDynamicBasePrice = (basePrice, roomTypeMaxOccupancy, availableRooms
 
 const formatDateKey = (date) => date.toISOString().split('T')[0];
 
+const generateManualBookingSourceId = () => {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  const suffix = randomBytes(3).toString('hex').toUpperCase();
+  return `RS-${y}${m}${d}-${suffix}`;
+};
+
 const calculateTotalPrice = async (roomTypeId, checkIn, checkOut, tx) => {
   const dates = enumerateDatesExclusive(checkIn, checkOut);
   if (dates.length === 0) {
@@ -69,7 +80,7 @@ const calculateTotalPrice = async (roomTypeId, checkIn, checkOut, tx) => {
   const [roomType, rates, inventories] = await Promise.all([
     tx.roomType.findUnique({
       where: { id: roomTypeId },
-      select: { id: true, maxOccupancy: true },
+      select: { id: true, maxOccupancy: true, basePrice: true, propertyId: true },
     }),
     tx.rate.findMany({
       where: {
@@ -117,20 +128,62 @@ const calculateTotalPrice = async (roomTypeId, checkIn, checkOut, tx) => {
   const total = dates.reduce((sum, date) => {
     const key = formatDateKey(date);
     const rate = ratesByDate[key];
-    if (!rate) {
-      return sum;
-    }
-
+    const effectiveBasePrice = Number(rate?.basePrice ?? roomType.basePrice ?? 0);
+    const modifier = Number(rate?.otaModifier ?? 1);
     const dynamicBasePrice = computeDynamicBasePrice(
-      rate.basePrice,
+      effectiveBasePrice,
       roomType.maxOccupancy,
       inventoryByDate[key],
     );
 
-    return sum + dynamicBasePrice * rate.otaModifier;
+    return sum + dynamicBasePrice * modifier;
   }, 0);
 
   return Math.round((total + Number.EPSILON) * 100) / 100;
+};
+
+const calculateDiscountedTotal = async ({ roomType, checkIn, checkOut, nightlyAmount, tx }) => {
+  const dates = enumerateDatesExclusive(checkIn, checkOut);
+
+  let discountedTotal = 0;
+  for (const date of dates) {
+    const key = formatDateKey(date);
+    const discountPercent = await getApplicableDiscountPercent({
+      propertyId: roomType.propertyId,
+      date: key,
+      txClient: tx,
+    });
+
+    const discountedNightly = nightlyAmount * (1 - Math.max(0, Math.min(100, discountPercent)) / 100);
+    discountedTotal += discountedNightly;
+  }
+
+  return Math.round((discountedTotal + Number.EPSILON) * 100) / 100;
+};
+
+const calculateManualBookingPrice = ({ roomType, guestsCount, nights }) => {
+  const baseCapacity = Number(roomType.baseCapacity || 1);
+  const maxCapacity = Number(roomType.maxCapacity || roomType.maxOccupancy || 1);
+
+  if (guestsCount > maxCapacity) {
+    throw new ApiError(400, `guestsCount cannot exceed maxCapacity (${maxCapacity})`);
+  }
+
+  const basePrice = Number(roomType.basePrice || 0);
+  const extraPersonPrice = Number(roomType.extraPersonPrice || 0);
+  const extraGuests = Math.max(0, guestsCount - baseCapacity);
+  const nightlyPrice = basePrice + extraGuests * extraPersonPrice;
+
+  return {
+    nightlyPrice,
+    totalPrice: Math.round((nightlyPrice * nights + Number.EPSILON) * 100) / 100,
+  };
+};
+
+const assertBookingPermission = (user) => {
+  if (!canManageBookings(user)) {
+    throw new ApiError(403, 'You are not authorized to manage bookings');
+  }
 };
 
 const canMutateBooking = (booking, user) => {
@@ -143,6 +196,8 @@ const canMutateBooking = (booking, user) => {
 };
 
 const listBookings = async (user, filters) => {
+  assertBookingPermission(user);
+
   const where = {};
 
   if (filters.otaSource) {
@@ -186,6 +241,8 @@ const listBookings = async (user, filters) => {
 };
 
 const getBookingById = async (id, user) => {
+  assertBookingPermission(user);
+
   const booking = await prisma.booking.findUnique({
     where: { id },
     include: {
@@ -209,6 +266,8 @@ const getBookingById = async (id, user) => {
 };
 
 const updateBookingStatus = async (id, status, user) => {
+  assertBookingPermission(user);
+
   const booking = await prisma.booking.findUnique({
     where: { id },
     include: {
@@ -259,6 +318,67 @@ const updateBookingStatus = async (id, status, user) => {
       where: { id },
       data: { status },
     });
+  });
+};
+
+const createManualBooking = async (payload, user) => {
+  assertBookingPermission(user);
+
+  const roomTypeId = payload.roomTypeId || payload.room_id;
+  const checkIn = payload.startDate || payload.start_date;
+  const checkOut = payload.endDate || payload.end_date;
+  const guestName = payload.guestName || payload.guest_name;
+  const guestsCount = Number(payload.guestsCount ?? payload.guests_count ?? 1);
+
+  const dates = enumerateDatesExclusive(checkIn, checkOut);
+  const nights = dates.length;
+  if (nights <= 0) {
+    throw new ApiError(400, 'Booking must include at least one night');
+  }
+
+  const roomType = await prisma.roomType.findUnique({
+    where: { id: roomTypeId },
+    include: {
+      property: {
+        select: { id: true, name: true, location: true },
+      },
+    },
+  });
+
+  if (!roomType) {
+    throw new ApiError(404, 'Room type not found');
+  }
+
+  assertPropertyAccess(roomType.property, user, 'You are not authorized to create bookings for this property');
+
+  return prisma.$transaction(async (tx) => {
+    const manualBookingSourceId = generateManualBookingSourceId();
+
+    const { nightlyPrice } = calculateManualBookingPrice({ roomType, guestsCount, nights });
+    const totalPrice = await calculateDiscountedTotal({
+      roomType,
+      checkIn,
+      checkOut,
+      nightlyAmount: nightlyPrice,
+      tx,
+    });
+
+    await reduceInventory(roomTypeId, checkIn, checkOut, tx);
+
+    const booking = await tx.booking.create({
+      data: {
+        otaSource: manualBookingSourceId,
+        roomTypeId,
+        checkIn: normalizeToUtcDate(checkIn),
+        checkOut: normalizeToUtcDate(checkOut),
+        guestName,
+        guestsCount,
+        status: 'CONFIRMED',
+        totalPrice,
+      },
+    });
+
+    return booking;
   });
 };
 
@@ -313,7 +433,20 @@ const syncBookingsFromOtas = async (otas, user) => {
       }
 
       const created = await prisma.$transaction(async (tx) => {
-        const totalPrice = await calculateTotalPrice(booking.roomTypeId, booking.checkIn, booking.checkOut, tx);
+        const totalPriceBase = await calculateTotalPrice(booking.roomTypeId, booking.checkIn, booking.checkOut, tx);
+        const roomType = await tx.roomType.findUnique({
+          where: { id: booking.roomTypeId },
+          select: { id: true, propertyId: true },
+        });
+        const nights = enumerateDatesExclusive(booking.checkIn, booking.checkOut).length;
+        const nightlyAmount = nights > 0 ? totalPriceBase / nights : totalPriceBase;
+        const totalPrice = await calculateDiscountedTotal({
+          roomType,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          nightlyAmount,
+          tx,
+        });
 
         if (booking.status === 'CONFIRMED') {
           await reduceInventory(booking.roomTypeId, booking.checkIn, booking.checkOut, tx);
@@ -357,5 +490,6 @@ module.exports = {
   listBookings,
   getBookingById,
   updateBookingStatus,
+  createManualBooking,
   syncBookingsFromOtas,
 };

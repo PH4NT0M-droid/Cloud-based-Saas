@@ -1,6 +1,6 @@
 const ApiError = require('../utils/ApiError');
 
-const PERMISSION_KEYS = ['canManageProperties', 'canManageRooms', 'canManagePricing', 'canManageInventory'];
+const PERMISSION_KEYS = ['canManageProperties', 'canManageRooms', 'canManagePricing', 'canManageInventory', 'manage_bookings'];
 
 const defaultPermissions = () =>
   PERMISSION_KEYS.reduce((acc, key) => {
@@ -8,14 +8,22 @@ const defaultPermissions = () =>
     return acc;
   }, {});
 
-const normalizePermissions = (permissions = {}) => ({
-  ...defaultPermissions(),
-  ...(permissions && typeof permissions === 'object' ? permissions : {}),
-});
+const normalizePermissions = (permissions = {}) => {
+  const raw = permissions && typeof permissions === 'object' ? permissions : {};
+  return {
+    ...defaultPermissions(),
+    ...raw,
+    ...(raw.canManageBookings !== undefined && raw.manage_bookings === undefined
+      ? { manage_bookings: Boolean(raw.canManageBookings) }
+      : {}),
+  };
+};
 
 const getUserId = (user) => user?.id || user?.sub || null;
 
 const hasPermission = (user, permission) => user?.role === 'ADMIN' || Boolean(user?.permissions?.[permission]);
+
+const canManageBookings = (user) => user?.role === 'ADMIN' || Boolean(normalizePermissions(user?.permissions).manage_bookings);
 
 const assertPermission = (user, permission, message = 'You are not authorized to perform this action') => {
   if (!hasPermission(user, permission)) {
@@ -80,6 +88,7 @@ module.exports = {
   getUserId,
   getManagedPropertyIds,
   hasPermission,
+  canManageBookings,
   assertPermission,
   assertPropertyAccess,
   assertPropertyMutationAccess,
