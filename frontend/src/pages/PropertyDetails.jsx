@@ -25,6 +25,28 @@ const buildDateRange = (days = 14) => {
 
 const formatDateKey = (date) => new Date(date).toISOString().split('T')[0];
 
+const upsertByDate = (items = [], targetDate, patch) => {
+  let found = false;
+  const next = items.map((item) => {
+    if (formatDateKey(item.date) === targetDate) {
+      found = true;
+      return { ...item, ...patch };
+    }
+
+    return item;
+  });
+
+  if (!found) {
+    next.push({
+      id: patch.id || `${targetDate}`,
+      date: targetDate,
+      ...patch,
+    });
+  }
+
+  return next;
+};
+
 function PropertyDetails() {
   const { propertyId } = useParams();
   const navigate = useNavigate();
@@ -106,9 +128,10 @@ function PropertyDetails() {
 
           return {
             ...roomType,
-            inventories: roomType.inventories.map((inventory) =>
-              formatDateKey(inventory.date) === date ? { ...inventory, availableRooms: updated.availableRooms } : inventory,
-            ),
+            inventories: upsertByDate(roomType.inventories, date, {
+              id: updated.id,
+              availableRooms: updated.availableRooms,
+            }),
           };
         }),
       }));
@@ -134,9 +157,11 @@ function PropertyDetails() {
 
           return {
             ...roomType,
-            rates: roomType.rates.map((rate) =>
-              formatDateKey(rate.date) === date ? { ...rate, basePrice: updated.basePrice, otaModifier: updated.otaModifier } : rate,
-            ),
+            rates: upsertByDate(roomType.rates, date, {
+              id: updated.id,
+              basePrice: updated.basePrice,
+              otaModifier: updated.otaModifier,
+            }),
           };
         }),
       }));

@@ -53,6 +53,10 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
       propertyIds: form.propertyIds,
     };
 
+    if (!payload.password) {
+      delete payload.password;
+    }
+
     if (editingUser) {
       await onUpdate(editingUser.id, payload);
     } else {

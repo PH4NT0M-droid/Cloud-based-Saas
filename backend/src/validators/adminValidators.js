@@ -20,7 +20,7 @@ const updateManagerValidator = [
   param('id').isUUID().withMessage('Manager id must be a valid UUID'),
   body('name').optional().isString().trim().isLength({ min: 2, max: 120 }).withMessage('Name must be 2-120 characters'),
   body('email').optional().isEmail().withMessage('Email must be valid').normalizeEmail(),
-  body('password').optional().isString().isLength({ min: 8, max: 100 }).withMessage('Password must be at least 8 characters'),
+  body('password').optional({ checkFalsy: true, nullable: true }).isString().isLength({ min: 8, max: 100 }).withMessage('Password must be at least 8 characters'),
   ...permissionValidator,
   propertyIdsValidator,
 ];
