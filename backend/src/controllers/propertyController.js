@@ -2,7 +2,7 @@ const propertyService = require('../services/propertyService');
 
 const createProperty = async (req, res, next) => {
   try {
-    const property = await propertyService.createProperty(req.body, req.user);
+    const property = await propertyService.createProperty(req.body, req.user, req.file);
     return res.status(201).json({
       success: true,
       data: property,
@@ -50,7 +50,7 @@ const getPropertyOverview = async (req, res, next) => {
 
 const updateProperty = async (req, res, next) => {
   try {
-    const property = await propertyService.updateProperty(req.params.id, req.body, req.user);
+    const property = await propertyService.updateProperty(req.params.id, req.body, req.user, req.file);
     return res.status(200).json({
       success: true,
       data: property,

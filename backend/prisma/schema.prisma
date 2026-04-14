@@ -36,7 +36,18 @@ model Property {
   id               String            @id @default(uuid())
   name             String
   location         String
+  fullAddress      String            @default("")
+  pinCode          String            @default("")
+  city             String            @default("")
+  state            String            @default("")
+  mobileNumber     String?
+  landlineNumber   String?
+  email            String?
+  website          String?
+  gstNumber        String?
+  propertyLogo     String?
   description      String
+  longDescription  String?
   roomTypes        RoomType[]
   propertyManagers PropertyManager[]
   createdAt        DateTime          @default(now())

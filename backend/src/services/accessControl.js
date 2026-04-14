@@ -1,6 +1,7 @@
 const ApiError = require('../utils/ApiError');
 
 const PERMISSION_KEYS = ['canManageProperties', 'canManageRooms', 'canManagePricing', 'canManageInventory', 'manage_bookings'];
+const PROPERTY_EDIT_PERMISSIONS = ['canManageProperties', 'EDIT_PROPERTY', 'edit_property'];
 
 const defaultPermissions = () =>
   PERMISSION_KEYS.reduce((acc, key) => {
@@ -21,7 +22,24 @@ const normalizePermissions = (permissions = {}) => {
 
 const getUserId = (user) => user?.id || user?.sub || null;
 
-const hasPermission = (user, permission) => user?.role === 'ADMIN' || Boolean(user?.permissions?.[permission]);
+const hasPermission = (user, permission) => {
+  if (user?.role === 'ADMIN') {
+    return true;
+  }
+
+  const permissions = user?.permissions;
+  if (Array.isArray(permissions)) {
+    return permissions.includes(permission);
+  }
+
+  if (permissions && typeof permissions === 'object') {
+    return Boolean(permissions[permission]);
+  }
+
+  return false;
+};
+
+const canEditProperty = (user) => PROPERTY_EDIT_PERMISSIONS.some((permission) => hasPermission(user, permission));
 
 const canManageBookings = (user) => user?.role === 'ADMIN' || Boolean(normalizePermissions(user?.permissions).manage_bookings);
 
@@ -83,11 +101,13 @@ const assertRoomTypeAccess = (roomType, user, permissionKey) => {
 
 module.exports = {
   PERMISSION_KEYS,
+  PROPERTY_EDIT_PERMISSIONS,
   defaultPermissions,
   normalizePermissions,
   getUserId,
   getManagedPropertyIds,
   hasPermission,
+  canEditProperty,
   canManageBookings,
   assertPermission,
   assertPropertyAccess,

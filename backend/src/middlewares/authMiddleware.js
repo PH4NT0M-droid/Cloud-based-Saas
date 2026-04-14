@@ -1,7 +1,7 @@
 const { verifyToken } = require('../utils/jwt');
 const ApiError = require('../utils/ApiError');
 const prisma = require('../config/prisma');
-const { normalizePermissions, canManageBookings } = require('../services/accessControl');
+const { normalizePermissions, canManageBookings, canEditProperty } = require('../services/accessControl');
 
 const sanitizeAuthenticatedUser = (user) => {
   const mappedProperties = (user.propertyManagers || []).map((assignment) => assignment.property);
@@ -73,8 +73,17 @@ const authorizeManageBookings = (req, res, next) => {
   return next();
 };
 
+const authorizePropertyEdit = (req, res, next) => {
+  if (!canEditProperty(req.user)) {
+    return next(new ApiError(403, 'Unauthorized'));
+  }
+
+  return next();
+};
+
 module.exports = {
   authenticate,
   authorizeRoles,
   authorizeManageBookings,
+  authorizePropertyEdit,
 };

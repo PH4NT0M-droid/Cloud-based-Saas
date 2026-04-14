@@ -45,6 +45,10 @@ describe('Property API', () => {
       id: 'prop-1',
       name: 'Sea View Stays',
       location: 'Goa',
+      fullAddress: 'Candolim Beach Road, Goa',
+      pinCode: '403515',
+      city: 'North Goa',
+      state: 'Goa',
       description: 'Beachside property',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -56,6 +60,10 @@ describe('Property API', () => {
       .send({
         name: 'Sea View Stays',
         location: 'Goa',
+        fullAddress: 'Candolim Beach Road, Goa',
+        pinCode: '403515',
+        city: 'North Goa',
+        state: 'Goa',
         description: 'Beachside property',
       });
 
@@ -71,7 +79,7 @@ describe('Property API', () => {
       email: 'manager@test.com',
       role: 'MANAGER',
       permissions: {
-        canManageProperties: true,
+        canManageProperties: false,
         canManageRooms: true,
         canManagePricing: true,
         canManageInventory: true,
@@ -121,7 +129,7 @@ describe('Property API', () => {
       id: 'manager-1',
       role: 'MANAGER',
       permissions: {
-        canManageProperties: true,
+        canManageProperties: false,
         canManageRooms: true,
         canManagePricing: true,
         canManageInventory: true,
@@ -234,7 +242,7 @@ describe('Property API', () => {
       email: 'manager@test.com',
       role: 'MANAGER',
       permissions: {
-        canManageProperties: true,
+        canManageProperties: false,
         canManageRooms: true,
         canManagePricing: true,
         canManageInventory: true,
@@ -255,10 +263,89 @@ describe('Property API', () => {
       .send({
         name: 'Hill View',
         location: 'Manali',
+        fullAddress: 'Old Manali Road',
+        pinCode: '175131',
+        city: '',
+        state: '',
         description: 'Mountain side stay',
       });
 
     expect(res.statusCode).toBe(403);
     expect(res.body.success).toBe(false);
+  });
+
+  it('updates extended property fields', async () => {
+    const adminToken = makeToken({ sub: 'admin-1', role: 'ADMIN', email: 'admin@test.com' });
+
+    prisma.property.findUnique.mockResolvedValue({
+      id: 'prop-1',
+      name: 'Sea View Stays',
+      location: 'Goa',
+      fullAddress: 'Old address',
+      pinCode: '403001',
+      city: 'Old City',
+      state: 'Old State',
+      description: 'Old short',
+      longDescription: 'Old long',
+    });
+
+    prisma.property.update.mockResolvedValue({
+      id: 'prop-1',
+      name: 'Sea View Stays Premium',
+      location: 'Candolim Beach Road',
+      fullAddress: 'Candolim Beach Road',
+      pinCode: '403515',
+      city: 'North Goa',
+      state: 'Goa',
+      mobileNumber: '9876543210',
+      landlineNumber: '08322446688',
+      email: 'ops@seaview.com',
+      website: 'https://seaview.example.com',
+      gstNumber: '22ABCDE1234F1Z5',
+      propertyLogo: 'https://cdn.example.com/logo.png',
+      description: 'Updated short',
+      longDescription: 'Updated long',
+    });
+
+    const res = await request(app)
+      .put('/api/properties/11111111-1111-4111-8111-111111111111')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Sea View Stays Premium',
+        fullAddress: 'Candolim Beach Road',
+        pinCode: '403515',
+        city: 'North Goa',
+        state: 'Goa',
+        mobileNumber: '9876543210',
+        landlineNumber: '08322446688',
+        email: 'ops@seaview.com',
+        website: 'https://seaview.example.com',
+        gstNumber: '22ABCDE1234F1Z5',
+        propertyLogo: 'https://cdn.example.com/logo.png',
+        description: 'Updated short',
+        longDescription: 'Updated long',
+      });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.city).toBe('North Goa');
+    expect(res.body.data.gstNumber).toBe('22ABCDE1234F1Z5');
+    expect(prisma.property.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fullAddress: 'Candolim Beach Road',
+          pinCode: '403515',
+          city: 'North Goa',
+          state: 'Goa',
+          mobileNumber: '9876543210',
+          landlineNumber: '08322446688',
+          email: 'ops@seaview.com',
+          website: 'https://seaview.example.com',
+          gstNumber: '22ABCDE1234F1Z5',
+          description: 'Updated short',
+          longDescription: 'Updated long',
+        }),
+      }),
+    );
   });
 });

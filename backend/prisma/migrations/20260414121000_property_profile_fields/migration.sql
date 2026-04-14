@@ -1,0 +1,12 @@
+ALTER TABLE "properties"
+ADD COLUMN "fullAddress" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "pinCode" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "city" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "state" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "mobileNumber" TEXT,
+ADD COLUMN "landlineNumber" TEXT,
+ADD COLUMN "email" TEXT,
+ADD COLUMN "website" TEXT,
+ADD COLUMN "gstNumber" TEXT,
+ADD COLUMN "propertyLogo" TEXT,
+ADD COLUMN "longDescription" TEXT;

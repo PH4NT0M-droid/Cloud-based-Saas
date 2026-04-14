@@ -1,3 +1,37 @@
+## Quick Startup Commands
+
+Use 3 terminals from the repo root.
+
+Terminal 1 (Postgres local data dir):
+
+```powershell
+Set-Location "D:\Desktop\Projects\Cloud Based Saas"
+& "C:\Program Files\PostgreSQL\15\bin\postgres.exe" -D ".\.local-postgres" -p 55432 -h 0.0.0.0
+```
+
+Terminal 2 (backend):
+
+```powershell
+Set-Location "D:\Desktop\Projects\Cloud Based Saas\backend"
+npx prisma db push
+npx prisma generate
+npm run dev
+```
+
+Terminal 3 (frontend):
+
+```powershell
+Set-Location "D:\Desktop\Projects\Cloud Based Saas\frontend"
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+If you use Docker DB instead of local Postgres:
+
+```powershell
+Set-Location "D:\Desktop\Projects\Cloud Based Saas"
+docker compose up -d postgres redis
+```
+
 # Full Setup Guide (Fresh Install)
 
 This guide sets up the project from scratch on a new machine.

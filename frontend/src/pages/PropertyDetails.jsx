@@ -11,6 +11,7 @@ import InventoryGrid from '../components/InventoryGrid';
 import PricingGrid from '../components/PricingGrid';
 import Modal from '../components/Modal';
 import TextInput from '../components/forms/TextInput';
+import PropertyForm from '../components/PropertyForm';
 import { useToast } from '../components/ToastProvider';
 import { formatCurrency } from '../utils/format';
 
@@ -48,6 +49,23 @@ const upsertByDate = (items = [], targetDate, patch) => {
   return next;
 };
 
+const canEditProperty = (user) => {
+  if (!user) {
+    return false;
+  }
+
+  if (user.role === 'ADMIN' || user.role === 'admin') {
+    return true;
+  }
+
+  const permissions = user.permissions;
+  if (Array.isArray(permissions)) {
+    return permissions.includes('EDIT_PROPERTY');
+  }
+
+  return Boolean(permissions?.canManageProperties || permissions?.EDIT_PROPERTY || permissions?.edit_property);
+};
+
 function PropertyDetails() {
   const { propertyId } = useParams();
   const navigate = useNavigate();
@@ -60,6 +78,8 @@ function PropertyDetails() {
   const [property, setProperty] = useState(null);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [propertyModalOpen, setPropertyModalOpen] = useState(false);
+  const [propertySaving, setPropertySaving] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({
     name: '',
@@ -77,7 +97,7 @@ function PropertyDetails() {
     startDate: range.startDate,
     endDate: range.endDate,
   });
-  const [propertyForm, setPropertyForm] = useState({ name: '', location: '', description: '' });
+  const [propertyForm, setPropertyForm] = useState({});
 
   const loadProperty = async (nextRange = range) => {
     try {
@@ -87,8 +107,18 @@ function PropertyDetails() {
       setProperty(overview);
       setPropertyForm({
         name: overview.name || '',
-        location: overview.location || '',
+        fullAddress: overview.fullAddress || overview.location || '',
+        pinCode: overview.pinCode || '',
+        city: overview.city || '',
+        state: overview.state || '',
+        mobileNumber: overview.mobileNumber || '',
+        landlineNumber: overview.landlineNumber || '',
+        email: overview.email || '',
+        website: overview.website || '',
+        gstNumber: overview.gstNumber || '',
+        propertyLogo: overview.propertyLogo || '',
         description: overview.description || '',
+        longDescription: overview.longDescription || '',
       });
     } catch (loadError) {
       setError(loadError.response?.data?.message || 'Failed to load property');
@@ -113,7 +143,7 @@ function PropertyDetails() {
   }, [range]);
 
   const roomTypes = property?.roomTypes || [];
-  const canEditPropertyInfo = user?.role === 'ADMIN' || Boolean(user?.permissions?.canManageProperties);
+  const canEditPropertyInfo = canEditProperty(user);
 
   const inventoryMatrix = useMemo(() => {
     const matrix = {};
@@ -302,26 +332,38 @@ function PropertyDetails() {
     }
   };
 
-  const savePropertyInfo = async (event) => {
-    event.preventDefault();
-
+  const savePropertyInfo = async (payload) => {
     try {
-      const updated = await propertyService.update(propertyId, {
-        name: propertyForm.name,
-        location: propertyForm.location,
-        description: propertyForm.description,
-      });
+      setPropertySaving(true);
+      const updated = await propertyService.update(propertyId, payload);
 
       setProperty((current) => ({
         ...current,
-        name: updated.name,
-        location: updated.location,
-        description: updated.description,
+        ...updated,
       }));
+      setPropertyForm({
+        name: updated.name || '',
+        fullAddress: updated.fullAddress || updated.location || '',
+        pinCode: updated.pinCode || '',
+        city: updated.city || '',
+        state: updated.state || '',
+        mobileNumber: updated.mobileNumber || '',
+        landlineNumber: updated.landlineNumber || '',
+        email: updated.email || '',
+        website: updated.website || '',
+        gstNumber: updated.gstNumber || '',
+        propertyLogo: updated.propertyLogo || '',
+        description: updated.description || '',
+        longDescription: updated.longDescription || '',
+      });
+      setPropertyModalOpen(false);
 
       pushToast({ type: 'success', title: 'Property updated', message: 'Property information was saved successfully.' });
     } catch (updateError) {
-      pushToast({ type: 'error', title: 'Update failed', message: updateError.response?.data?.message || updateError.message });
+      const firstValidationError = updateError.response?.data?.errors?.[0]?.message;
+      pushToast({ type: 'error', title: 'Update failed', message: firstValidationError || updateError.response?.data?.message || updateError.message });
+    } finally {
+      setPropertySaving(false);
     }
   };
 
@@ -362,55 +404,65 @@ function PropertyDetails() {
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand-700">Property workspace</p>
             <h2 className="mt-2 text-3xl font-black text-slate-900">{property?.name}</h2>
-            <p className="mt-2 text-sm text-slate-500">{property?.location} · {property?.description}</p>
+            <p className="mt-2 text-sm text-slate-500">{property?.fullAddress || property?.location} · {property?.description}</p>
           </div>
-          {user?.role === 'ADMIN' ? (
-            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
-              <p className="font-semibold text-slate-900">Managers</p>
-              <p>{property?.managers?.map((manager) => manager.name).join(', ') || 'Unassigned'}</p>
-            </div>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            {canEditPropertyInfo ? (
+              <button
+                onClick={() => setPropertyModalOpen(true)}
+                className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Edit Property
+              </button>
+            ) : null}
+            {user?.role === 'ADMIN' ? (
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+                <p className="font-semibold text-slate-900">Managers</p>
+                <p>{property?.managers?.map((manager) => manager.name).join(', ') || 'Unassigned'}</p>
+              </div>
+            ) : null}
+          </div>
         </div>
 
       </section>
 
       {canEditPropertyInfo ? (
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
-          <div className="mb-4">
-            <h3 className="text-xl font-black text-slate-900">Edit property information</h3>
-            <p className="text-sm text-slate-500">Update core property details from one place.</p>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-black text-slate-900">Edit property information</h3>
+              <p className="text-sm text-slate-500">Update core details, contacts, branding, and descriptions.</p>
+            </div>
+            <button onClick={() => setPropertyModalOpen(true)} className="rounded-2xl bg-brand-700 px-4 py-2.5 font-semibold text-white hover:bg-brand-800">
+              Open edit form
+            </button>
           </div>
 
-          <form className="grid gap-3 md:grid-cols-2" onSubmit={savePropertyInfo}>
-            <TextInput
-              label="Property name"
-              value={propertyForm.name}
-              onChange={(event) => setPropertyForm((current) => ({ ...current, name: event.target.value }))}
-              required
-            />
-            <TextInput
-              label="Location"
-              value={propertyForm.location}
-              onChange={(event) => setPropertyForm((current) => ({ ...current, location: event.target.value }))}
-              required
-            />
-            <div className="md:col-span-2">
-              <TextInput
-                label="Description"
-                value={propertyForm.description}
-                onChange={(event) => setPropertyForm((current) => ({ ...current, description: event.target.value }))}
-                required
-              />
+          <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Address</p>
+              <p className="mt-1 text-slate-700">{property?.fullAddress || property?.location || 'Not set'}</p>
             </div>
-            <div className="flex gap-2 md:col-span-2">
-              <button type="submit" className="rounded-2xl bg-brand-700 px-4 py-2.5 font-semibold text-white hover:bg-brand-800">
-                Save property info
-              </button>
-              <button type="button" onClick={deletePropertyInfo} className="rounded-2xl bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700">
-                Delete property
-              </button>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Pin Code</p>
+              <p className="mt-1 text-slate-700">{property?.pinCode || 'Not set'}</p>
             </div>
-          </form>
+          </div>
+          <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Email</p>
+              <p className="mt-1 text-slate-700">{property?.email || 'Not set'}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Mobile</p>
+              <p className="mt-1 text-slate-700">{property?.mobileNumber || 'Not set'}</p>
+            </div>
+          </div>
+          {user?.role === 'ADMIN' ? (
+            <button type="button" onClick={deletePropertyInfo} className="mt-4 rounded-2xl bg-red-600 px-4 py-2.5 font-semibold text-white hover:bg-red-700">
+              Delete property
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -621,6 +673,10 @@ function PropertyDetails() {
             Apply bulk update
           </button>
         </form>
+      </Modal>
+
+      <Modal open={propertyModalOpen} title="Edit property" onClose={() => setPropertyModalOpen(false)}>
+        <PropertyForm initialData={propertyForm} onSubmit={savePropertyInfo} isEditMode isSubmitting={propertySaving} />
       </Modal>
     </div>
   );
