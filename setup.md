@@ -32,6 +32,33 @@ Set-Location "D:\Desktop\Projects\Cloud Based Saas"
 docker compose up -d postgres redis
 ```
 
+### Property-Scoped Permissions Rollout (Latest)
+
+After pulling latest code (which includes `ManagerPropertyPermission`), run this once:
+
+```powershell
+Set-Location "D:\Desktop\Projects\Cloud Based Saas\backend"
+npx prisma db push
+npx prisma generate
+```
+
+If `npx prisma generate` fails on Windows with `EPERM ... query_engine-windows.dll.node`:
+
+```powershell
+Set-Location "D:\Desktop\Projects\Cloud Based Saas\backend"
+npx prisma generate --no-engine
+```
+
+### Windows Quick Fixes (Common)
+
+If local Postgres command returns exit code `1`, check if PostgreSQL is already listening first:
+
+```powershell
+Get-NetTCPConnection -LocalPort 55432 -State Listen -ErrorAction SilentlyContinue
+```
+
+If no listener appears, rerun Postgres command from repo root and verify `.local-postgres` exists.
+
 # Full Setup Guide (Fresh Install)
 
 This guide sets up the project from scratch on a new machine.

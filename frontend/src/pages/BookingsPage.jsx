@@ -1,123 +1,514 @@
 import { useEffect, useMemo, useState } from 'react';
 import bookingService from '../services/bookingService';
+import propertyService from '../services/propertyService';
 import roomService from '../services/roomService';
-import promotionService from '../services/promotionService';
+import rateService from '../services/rateService';
 import { formatCurrency } from '../utils/format';
 import ErrorBanner from '../components/ErrorBanner';
 import useAuth from '../hooks/useAuth';
 import Modal from '../components/Modal';
 import TextInput from '../components/forms/TextInput';
 import { useToast } from '../components/ToastProvider';
+import { canManageBookings as canManageBookingsPermission } from '../utils/permissions';
+
+const ROOM_TABLE_COLUMNS = ['Room Type', 'Meal Plan', 'Rooms', 'Adults', 'Extra Bed', 'Children', 'Price / Night', 'Total'];
+
+const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const normalizeState = (value) => String(value || '').trim().toUpperCase();
+
+const formatDateOnly = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toISOString().split('T')[0];
+};
+
+const toDateInputValue = (value) => formatDateOnly(value);
+
+const nightsBetween = (checkInValue, checkOutValue) => {
+  if (!checkInValue || !checkOutValue) {
+    return 0;
+  }
+
+  const checkInDate = new Date(checkInValue);
+  const checkOutDate = new Date(checkOutValue);
+  if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime())) {
+    return 0;
+  }
+
+  const start = Date.UTC(checkInDate.getUTCFullYear(), checkInDate.getUTCMonth(), checkInDate.getUTCDate());
+  const end = Date.UTC(checkOutDate.getUTCFullYear(), checkOutDate.getUTCMonth(), checkOutDate.getUTCDate());
+
+  return Math.max(0, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+};
+
+const getDateKeysForStay = (checkInValue, checkOutValue) => {
+  const nights = nightsBetween(checkInValue, checkOutValue);
+  if (nights <= 0) {
+    return [];
+  }
+
+  const checkInDate = new Date(checkInValue);
+  const cursor = new Date(Date.UTC(checkInDate.getUTCFullYear(), checkInDate.getUTCMonth(), checkInDate.getUTCDate()));
+
+  const keys = [];
+  for (let i = 0; i < nights; i += 1) {
+    const utcDate = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate()));
+    keys.push(utcDate.toISOString().split('T')[0]);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return keys;
+};
+
+const createEmptyRow = () => ({
+  roomTypeId: '',
+  ratePlanId: '',
+  rooms: 1,
+  adults: 1,
+  extraBed: 0,
+  children: 0,
+  pricePerNight: 0,
+  manualPrice: false,
+  totalCost: 0,
+});
+
+const getGstRateFromRowPrice = (pricePerNight) => {
+  const value = Number(pricePerNight || 0);
+  if (value < 1000) {
+    return 0;
+  }
+  if (value <= 7500) {
+    return 5;
+  }
+  return 18;
+};
+
+const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount }) => {
+  const taxRows = rows.map((row) => {
+    const rowSubtotal = Number(row.totalCost || 0);
+    const gstRate = getGstRateFromRowPrice(row.pricePerNight);
+    const rowGST = rowSubtotal * (gstRate / 100);
+    return {
+      ...row,
+      rowSubtotal,
+      gstRate,
+      rowGST,
+      rowTotal: rowSubtotal + rowGST,
+    };
+  });
+
+  const subtotal = round2(taxRows.reduce((sum, row) => sum + Number(row.rowSubtotal || 0), 0));
+  const totalGST = round2(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
+  const gstRate = subtotal > 0 ? round2((totalGST / subtotal) * 100) : 0;
+
+  const isIntraState = normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
+  const cgst = isIntraState ? round2(totalGST / 2) : 0;
+  const sgst = isIntraState ? round2(totalGST / 2) : 0;
+  const igst = isIntraState ? 0 : totalGST;
+
+  const exactTotal = subtotal + totalGST;
+  const totalAmount = Math.round(exactTotal);
+  const roundOff = round2(totalAmount - exactTotal);
+
+  const paid = round2(Number(paidAmount || 0));
+  const dueAmount = round2(totalAmount - paid);
+
+  return {
+    nights,
+    totalRooms: rows.reduce((sum, row) => sum + Number(row.rooms || 0), 0),
+    subtotal,
+    totalGST,
+    gstRate,
+    cgst,
+    sgst,
+    igst,
+    roundOff,
+    totalAmount,
+    paidAmount: paid,
+    dueAmount,
+  };
+};
 
 function BookingsPage() {
   const { user } = useAuth();
   const { pushToast } = useToast();
+
   const [bookings, setBookings] = useState([]);
+  const [properties, setProperties] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [promotions, setPromotions] = useState([]);
+  const [pricingGrid, setPricingGrid] = useState({ dates: [], rows: [] });
+
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualForm, setManualForm] = useState({
-    roomTypeId: '',
-    startDate: '',
-    endDate: '',
+
+  const [bookingModalOpen, setBookingModalOpen] = useState(false);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [invoiceHtml, setInvoiceHtml] = useState('');
+  const [editingBookingId, setEditingBookingId] = useState(null);
+
+  const [form, setForm] = useState({
+    propertyId: '',
     guestName: '',
-    guestsCount: 1,
+    guestMobile: '',
+    guestEmail: '',
+    gstNumber: '',
+    guestAddress: '',
+    guestPincode: '',
+    guestState: '',
+    checkIn: '',
+    checkOut: '',
+    paymentReference: '',
+    specialNote: '',
+    paidAmount: 0,
+    rooms: [createEmptyRow()],
   });
 
-  const canManageBookings = user?.role === 'ADMIN' || Boolean(user?.permissions?.manage_bookings);
+  const canManageBookings = canManageBookingsPermission(user);
+
+  const selectedProperty = useMemo(
+    () => properties.find((property) => property.id === form.propertyId) || null,
+    [properties, form.propertyId],
+  );
+
+  const nights = useMemo(() => nightsBetween(form.checkIn, form.checkOut), [form.checkIn, form.checkOut]);
+
+  const pricingMap = useMemo(() => {
+    const map = {};
+    for (const roomRow of pricingGrid.rows || []) {
+      if (!Array.isArray(roomRow.ratePlans)) {
+        continue;
+      }
+      for (const ratePlan of roomRow.ratePlans) {
+        map[`${roomRow.roomTypeId}:${ratePlan.ratePlanId}`] = ratePlan.prices || {};
+      }
+    }
+    return map;
+  }, [pricingGrid]);
+
+  const roomTypeById = useMemo(() => {
+    const map = {};
+    for (const roomType of rooms) {
+      map[roomType.id] = roomType;
+    }
+    return map;
+  }, [rooms]);
+
+  const propertyRows = useMemo(
+    () => rooms.filter((roomType) => !form.propertyId || roomType.propertyId === form.propertyId),
+    [rooms, form.propertyId],
+  );
+
+  const pricedRows = useMemo(() => {
+    const dateKeys = getDateKeysForStay(form.checkIn, form.checkOut);
+    return form.rooms.map((row) => {
+      const roomType = roomTypeById[row.roomTypeId];
+      const ratePlan = (roomType?.ratePlans || []).find((item) => item.id === row.ratePlanId)
+        || (roomType?.ratePlans || []).find((item) => item.isDefault)
+        || (roomType?.ratePlans || [])[0]
+        || null;
+      const effectiveRatePlanId = row.ratePlanId || ratePlan?.id || '';
+
+      let computedNightly = Number(row.pricePerNight || 0);
+      if (!row.manualPrice && row.roomTypeId && effectiveRatePlanId && dateKeys.length > 0) {
+        const dailyPrices = pricingMap[`${row.roomTypeId}:${effectiveRatePlanId}`] || {};
+        const collected = dateKeys.map((key) => Number(dailyPrices[key] || 0));
+        const sum = collected.reduce((acc, item) => acc + item, 0);
+        computedNightly = collected.length > 0 ? round2(sum / collected.length) : computedNightly;
+      }
+
+      const totalCost = round2(computedNightly * Number(row.rooms || 0) * nights);
+
+      return {
+        ...row,
+        roomType,
+        ratePlan,
+        ratePlanId: effectiveRatePlanId,
+        pricePerNight: computedNightly,
+        totalCost,
+      };
+    });
+  }, [form.rooms, form.checkIn, form.checkOut, nights, pricingMap, roomTypeById]);
+
+  const summary = useMemo(
+    () =>
+      calculateSummary({
+        rows: pricedRows,
+        propertyState: selectedProperty?.state,
+        guestState: form.guestState,
+        nights,
+        paidAmount: form.paidAmount,
+      }),
+    [pricedRows, selectedProperty, form.guestState, form.paidAmount, nights],
+  );
 
   const loadBookings = async () => {
     const loaded = await bookingService.getAll({});
     setBookings(loaded);
   };
 
-  const loadRooms = async () => {
-    const loadedRooms = await roomService.getAll();
-    setRooms(loadedRooms);
-  };
-
-  const loadPromotions = async () => {
-    const loadedPromotions = await promotionService.getAll();
-    setPromotions(loadedPromotions);
+  const loadProperties = async () => {
+    const loaded = await propertyService.getAll();
+    setProperties(loaded);
   };
 
   useEffect(() => {
-    Promise.all([loadBookings(), loadRooms(), loadPromotions()]).catch((loadError) =>
-      setError(loadError.response?.data?.message || 'Failed to load bookings'),
-    );
-  }, []);
-
-  const selectedRoom = useMemo(
-    () => rooms.find((room) => room.id === manualForm.roomTypeId) || null,
-    [manualForm.roomTypeId, rooms],
-  );
-
-  const estimatedTotal = useMemo(() => {
-    if (!selectedRoom || !manualForm.startDate || !manualForm.endDate) {
-      return 0;
+    if (!canManageBookings) {
+      setBookings([]);
+      setError('You are not authorized to manage bookings');
+      return;
     }
 
-    const start = new Date(manualForm.startDate);
-    const end = new Date(manualForm.endDate);
-    const nights = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    if (nights <= 0) {
-      return 0;
+    Promise.all([loadBookings(), loadProperties()]).catch((loadError) => {
+      setError(loadError.response?.data?.message || 'Failed to load bookings');
+    });
+  }, [canManageBookings]);
+
+  useEffect(() => {
+    if (!form.propertyId) {
+      setRooms([]);
+      setPricingGrid({ dates: [], rows: [] });
+      return;
     }
 
-    const baseCapacity = Number(selectedRoom.baseCapacity || 1);
-    const basePrice = Number(selectedRoom.basePrice || 0);
-    const extraPersonPrice = Number(selectedRoom.extraPersonPrice || 0);
-    const guests = Number(manualForm.guestsCount || 1);
-    const extraGuests = Math.max(0, guests - baseCapacity);
-    const nightly = basePrice + extraGuests * extraPersonPrice;
+    const run = async () => {
+      try {
+        const loadedRooms = await roomService.getByProperty(form.propertyId);
+        setRooms(loadedRooms);
 
-    const startUtc = new Date(`${manualForm.startDate}T00:00:00.000Z`);
-    const roomPropertyId = selectedRoom.property?.id;
-    let discountedTotal = 0;
+        const checkInDate = formatDateOnly(form.checkIn);
+        const checkOutDate = formatDateOnly(form.checkOut);
+        if (!checkInDate || !checkOutDate || nights <= 0) {
+          setPricingGrid({ dates: [], rows: [] });
+          return;
+        }
 
-    for (let offset = 0; offset < nights; offset += 1) {
-      const date = new Date(startUtc);
-      date.setUTCDate(startUtc.getUTCDate() + offset);
+        const pricing = await rateService.getPricingGrid({
+          propertyId: form.propertyId,
+          startDate: checkInDate,
+          endDate: checkOutDate,
+        });
+        setPricingGrid(pricing || { dates: [], rows: [] });
+      } catch (loadError) {
+        setError(loadError.response?.data?.message || 'Failed to load room pricing');
+      }
+    };
 
-      const matchingPromotions = promotions.filter((promotion) => {
-        const propertyIds = Array.isArray(promotion.propertyIds) ? promotion.propertyIds : [];
-        const appliesToProperty = propertyIds.length === 0 || (roomPropertyId && propertyIds.includes(roomPropertyId));
-        const afterStart = !promotion.startDate || new Date(promotion.startDate) <= date;
-        const beforeEnd = !promotion.endDate || new Date(promotion.endDate) >= date;
-        return appliesToProperty && afterStart && beforeEnd;
-      });
+    run();
+  }, [form.propertyId, form.checkIn, form.checkOut, nights]);
 
-      const discountPercent = matchingPromotions.length
-        ? Math.max(...matchingPromotions.map((promotion) => Number(promotion.discountPercent || promotion.discount || 0)))
-        : 0;
-
-      discountedTotal += nightly * (1 - Math.max(0, Math.min(100, discountPercent)) / 100);
+  useEffect(() => {
+    const pincode = String(form.guestPincode || '').trim();
+    if (pincode.length !== 6) {
+      return;
     }
 
-    return discountedTotal;
-  }, [manualForm.endDate, manualForm.guestsCount, manualForm.startDate, promotions, selectedRoom]);
+    const controller = new AbortController();
+    fetch(`https://api.postalpincode.in/pincode/${pincode}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        const postOffice = data?.[0]?.PostOffice?.[0];
+        if (!postOffice) {
+          return;
+        }
+        setForm((current) => ({
+          ...current,
+          guestState: current.guestState || postOffice.State || '',
+        }));
+      })
+      .catch(() => {});
 
-  const submitManualBooking = async (event) => {
-    event.preventDefault();
+    return () => controller.abort();
+  }, [form.guestPincode]);
+
+  const resetForm = () => {
+    setEditingBookingId(null);
+    setForm({
+      propertyId: '',
+      guestName: '',
+      guestMobile: '',
+      guestEmail: '',
+      gstNumber: '',
+      guestAddress: '',
+      guestPincode: '',
+      guestState: '',
+      checkIn: '',
+      checkOut: '',
+      paymentReference: '',
+      specialNote: '',
+      paidAmount: 0,
+      rooms: [createEmptyRow()],
+    });
+  };
+
+  const addRow = () => {
+    setForm((current) => ({
+      ...current,
+      rooms: [...current.rooms, createEmptyRow()],
+    }));
+  };
+
+  const removeRow = (index) => {
+    setForm((current) => {
+      const nextRows = current.rooms.filter((_, rowIndex) => rowIndex !== index);
+      return {
+        ...current,
+        rooms: nextRows.length > 0 ? nextRows : [createEmptyRow()],
+      };
+    });
+  };
+
+  const updateRow = (index, patch) => {
+    setForm((current) => ({
+      ...current,
+      rooms: current.rooms.map((row, rowIndex) => {
+        if (rowIndex !== index) {
+          return row;
+        }
+        return {
+          ...row,
+          ...patch,
+        };
+      }),
+    }));
+  };
+
+  const openCreateBooking = () => {
+    resetForm();
+    setBookingModalOpen(true);
+  };
+
+  const openEditBooking = async (bookingId) => {
     try {
       setBusy(true);
-      await bookingService.createManual({
-        roomTypeId: manualForm.roomTypeId,
-        startDate: manualForm.startDate,
-        endDate: manualForm.endDate,
-        guestName: manualForm.guestName,
-        guestsCount: Number(manualForm.guestsCount),
-      });
+      const booking = await bookingService.getById(bookingId);
+      const rows = Array.isArray(booking.bookingRooms) && booking.bookingRooms.length > 0
+        ? booking.bookingRooms
+        : [
+            {
+              roomTypeId: booking.roomTypeId,
+              ratePlanId: booking.ratePlanId,
+              rooms: 1,
+              adults: booking.guestsCount || 1,
+              extraBed: 0,
+              children: 0,
+              pricePerNight: booking.nights > 0 ? round2((booking.subtotal || booking.totalAmount || 0) / booking.nights) : 0,
+            },
+          ];
 
+      setEditingBookingId(bookingId);
+      setForm({
+        propertyId: booking.propertyId || booking.roomType?.propertyId || '',
+        guestName: booking.guestName || '',
+        guestMobile: booking.guestMobile || '',
+        guestEmail: booking.guestEmail || '',
+        gstNumber: booking.gstNumber || '',
+        guestAddress: booking.guestAddress || '',
+        guestPincode: '',
+        guestState: booking.guestState || '',
+        checkIn: toDateInputValue(booking.checkIn),
+        checkOut: toDateInputValue(booking.checkOut),
+        paymentReference: booking.paymentReference || '',
+        specialNote: booking.specialNote || '',
+        paidAmount: Number(booking.paidAmount || 0),
+        rooms: rows.map((row) => ({
+          roomTypeId: row.roomTypeId,
+          ratePlanId: row.ratePlanId || '',
+          rooms: Number(row.rooms || 1),
+          adults: Number(row.adults || 0),
+          extraBed: Number(row.extraBed || 0),
+          children: Number(row.children || 0),
+          pricePerNight: Number(row.pricePerNight || 0),
+          manualPrice: true,
+          totalCost: Number(row.totalCost || 0),
+        })),
+      });
+      setBookingModalOpen(true);
+    } catch (loadError) {
+      pushToast({ type: 'error', title: 'Load failed', message: loadError.response?.data?.message || loadError.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitBooking = async (event) => {
+    event.preventDefault();
+
+    if (!form.propertyId) {
+      pushToast({ type: 'error', title: 'Validation failed', message: 'Property is required.' });
+      return;
+    }
+
+    if (!form.guestName || !form.guestMobile) {
+      pushToast({ type: 'error', title: 'Validation failed', message: 'Guest name and mobile are required.' });
+      return;
+    }
+
+    if (nights <= 0) {
+      pushToast({ type: 'error', title: 'Validation failed', message: 'Check-out must be after check-in.' });
+      return;
+    }
+
+    if (pricedRows.some((row) => !row.roomTypeId)) {
+      pushToast({ type: 'error', title: 'Validation failed', message: 'Each room row needs a room type.' });
+      return;
+    }
+
+    if (pricedRows.some((row) => Number(row.pricePerNight || 0) < 0)) {
+      pushToast({ type: 'error', title: 'Validation failed', message: 'Price per night must be non-negative.' });
+      return;
+    }
+
+    if (summary.paidAmount > summary.totalAmount) {
+      pushToast({ type: 'error', title: 'Validation failed', message: 'Paid amount cannot exceed total.' });
+      return;
+    }
+
+    const payload = {
+      propertyId: form.propertyId,
+      guestName: form.guestName,
+      guestMobile: form.guestMobile,
+      guestEmail: form.guestEmail || undefined,
+      gstNumber: form.gstNumber || undefined,
+      guestAddress: form.guestAddress || undefined,
+      guestState: form.guestState || undefined,
+      checkInDate: form.checkIn,
+      checkOutDate: form.checkOut,
+      paymentReference: form.paymentReference || undefined,
+      specialNote: form.specialNote || undefined,
+      paidAmount: summary.paidAmount,
+      rooms: pricedRows.map((row) => ({
+        roomTypeId: row.roomTypeId,
+        ratePlanId: row.ratePlanId,
+        rooms: Number(row.rooms),
+        adults: Number(row.adults),
+        extraBed: Number(row.extraBed),
+        children: Number(row.children),
+        pricePerNight: Number(row.pricePerNight),
+      })),
+      summary,
+    };
+
+    try {
+      setBusy(true);
+      if (editingBookingId) {
+        await bookingService.update(editingBookingId, payload);
+      } else {
+        await bookingService.create(payload);
+      }
       await loadBookings();
-      setManualOpen(false);
-      setManualForm({ roomTypeId: '', startDate: '', endDate: '', guestName: '', guestsCount: 1 });
-      pushToast({ type: 'success', title: 'Booking created', message: 'Manual booking was created successfully.' });
-    } catch (submitError) {
-      pushToast({ type: 'error', title: 'Create failed', message: submitError.response?.data?.message || submitError.message });
+      setBookingModalOpen(false);
+      resetForm();
+      pushToast({
+        type: 'success',
+        title: editingBookingId ? 'Booking updated' : 'Booking created',
+        message: 'Booking has been saved with recalculated totals and invoice-ready data.',
+      });
+    } catch (saveError) {
+      pushToast({ type: 'error', title: 'Save failed', message: saveError.response?.data?.message || saveError.message });
     } finally {
       setBusy(false);
     }
@@ -128,9 +519,41 @@ function BookingsPage() {
       setBusy(true);
       await bookingService.cancel(bookingId);
       await loadBookings();
-      pushToast({ type: 'success', title: 'Booking cancelled', message: 'Booking has been cancelled and inventory restored.' });
+      pushToast({ type: 'success', title: 'Booking cancelled', message: 'Booking cancelled and inventory restored.' });
     } catch (cancelError) {
       pushToast({ type: 'error', title: 'Cancel failed', message: cancelError.response?.data?.message || cancelError.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewInvoice = async (bookingId) => {
+    try {
+      setBusy(true);
+      const response = await bookingService.previewInvoice(bookingId);
+      setInvoiceHtml(response.html || '');
+      setInvoiceModalOpen(true);
+    } catch (previewError) {
+      pushToast({ type: 'error', title: 'Preview failed', message: previewError.response?.data?.message || previewError.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadInvoice = async (bookingId) => {
+    try {
+      setBusy(true);
+      const blob = await bookingService.downloadInvoice(bookingId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${bookingId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (downloadError) {
+      pushToast({ type: 'error', title: 'Download failed', message: downloadError.response?.data?.message || downloadError.message });
     } finally {
       setBusy(false);
     }
@@ -139,7 +562,13 @@ function BookingsPage() {
   const visibleBookings = useMemo(
     () =>
       bookings.filter((booking) => {
-        const haystack = [booking.otaSource, booking.guestName, booking.roomType?.name, booking.roomType?.property?.name]
+        const haystack = [
+          booking.otaSource,
+          booking.guestName,
+          booking.roomType?.name,
+          booking.property?.name,
+          booking.roomType?.property?.name,
+        ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -152,8 +581,8 @@ function BookingsPage() {
     <div className="space-y-6">
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
         <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand-700">Bookings</p>
-        <h2 className="mt-2 text-3xl font-black text-slate-900">Search bookings by guest, room, property, or OTA</h2>
-        <p className="mt-2 text-sm text-slate-500">The table now surfaces names everywhere, so operational staff never need to see raw IDs.</p>
+        <h2 className="mt-2 text-3xl font-black text-slate-900">Manual Booking Ledger</h2>
+        <p className="mt-2 text-sm text-slate-500">Tally-style booking, GST breakdown, and invoice generation with one flow.</p>
       </div>
 
       <ErrorBanner message={error} />
@@ -162,7 +591,7 @@ function BookingsPage() {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search bookings by name"
+          placeholder="Search bookings"
           className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand-400"
         />
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -171,7 +600,7 @@ function BookingsPage() {
         {canManageBookings ? (
           <button
             type="button"
-            onClick={() => setManualOpen(true)}
+            onClick={openCreateBooking}
             className="rounded-2xl bg-brand-700 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-800"
           >
             Create Booking
@@ -184,111 +613,229 @@ function BookingsPage() {
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="px-4 py-3 text-left font-semibold">Property</th>
-              <th className="px-4 py-3 text-left font-semibold">Room</th>
               <th className="px-4 py-3 text-left font-semibold">Guest</th>
-              <th className="px-4 py-3 text-left font-semibold">Check in</th>
-              <th className="px-4 py-3 text-left font-semibold">Check out</th>
-              <th className="px-4 py-3 text-left font-semibold">OTA</th>
+              <th className="px-4 py-3 text-left font-semibold">Check In</th>
+              <th className="px-4 py-3 text-left font-semibold">Check Out</th>
               <th className="px-4 py-3 text-left font-semibold">Total</th>
+              <th className="px-4 py-3 text-left font-semibold">Paid</th>
+              <th className="px-4 py-3 text-left font-semibold">Due</th>
               <th className="px-4 py-3 text-left font-semibold">Status</th>
-              {canManageBookings ? <th className="px-4 py-3 text-left font-semibold">Actions</th> : null}
+              <th className="px-4 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
             {visibleBookings.map((booking) => (
               <tr key={booking.id} className="border-t border-slate-100">
-                <td className="px-4 py-3 font-semibold text-slate-900">{booking.roomType?.property?.name || 'Unknown property'}</td>
-                <td className="px-4 py-3 text-slate-600">{booking.roomType?.name || 'Room'}</td>
+                <td className="px-4 py-3 font-semibold text-slate-900">{booking.property?.name || booking.roomType?.property?.name || '-'}</td>
                 <td className="px-4 py-3 text-slate-600">{booking.guestName}</td>
-                <td className="px-4 py-3 text-slate-600">{new Date(booking.checkIn).toISOString().split('T')[0]}</td>
-                <td className="px-4 py-3 text-slate-600">{new Date(booking.checkOut).toISOString().split('T')[0]}</td>
-                <td className="px-4 py-3 text-slate-600">{booking.otaSource}</td>
-                <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(booking.totalPrice)}</td>
+                <td className="px-4 py-3 text-slate-600">{formatDateOnly(booking.checkIn)}</td>
+                <td className="px-4 py-3 text-slate-600">{formatDateOnly(booking.checkOut)}</td>
+                <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(booking.totalAmount ?? booking.totalPrice ?? 0)}</td>
+                <td className="px-4 py-3 text-slate-600">{formatCurrency(booking.paidAmount || 0)}</td>
+                <td className="px-4 py-3 text-slate-600">{formatCurrency(booking.dueAmount || 0)}</td>
                 <td className="px-4 py-3 text-slate-600">{booking.status}</td>
-                {canManageBookings ? (
-                  <td className="px-4 py-3">
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      disabled={busy || booking.status === 'CANCELLED'}
-                      onClick={() => cancelBooking(booking.id)}
-                      className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => previewInvoice(booking.id)}
+                      className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700"
                     >
-                      Cancel
+                      Preview Invoice
                     </button>
-                  </td>
-                ) : null}
+                    <button
+                      type="button"
+                      onClick={() => downloadInvoice(booking.id)}
+                      className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700"
+                    >
+                      Download Invoice
+                    </button>
+                    {canManageBookings ? (
+                      <button
+                        type="button"
+                        onClick={() => openEditBooking(booking.id)}
+                        className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700"
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                    {canManageBookings ? (
+                      <button
+                        type="button"
+                        disabled={busy || booking.status === 'CANCELLED'}
+                        onClick={() => cancelBooking(booking.id)}
+                        className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <Modal open={manualOpen} title="Create manual booking" onClose={() => setManualOpen(false)}>
-        <form className="space-y-3" onSubmit={submitManualBooking}>
-          <label className="space-y-1 text-sm">
-            <span className="font-semibold text-slate-700">Room</span>
-            <select
-              required
-              value={manualForm.roomTypeId}
-              onChange={(event) => setManualForm((current) => ({ ...current, roomTypeId: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
-            >
-              <option value="">Select a room</option>
-              {rooms.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.property?.name ? `${room.property.name} - ` : ''}
-                  {room.name}
-                </option>
-              ))}
-            </select>
-          </label>
+      <Modal open={bookingModalOpen} title={editingBookingId ? 'Edit Booking' : 'Create Booking'} onClose={() => setBookingModalOpen(false)} panelClassName="max-w-6xl">
+        <form className="space-y-5" onSubmit={submitBooking}>
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <p className="mb-3 text-sm font-semibold text-slate-800">Section 1: Property</p>
+            <label className="space-y-1 text-sm">
+              <span className="font-semibold text-slate-700">Property</span>
+              <select
+                required
+                value={form.propertyId}
+                onChange={(event) => {
+                  const propertyId = event.target.value;
+                  setForm((current) => ({
+                    ...current,
+                    propertyId,
+                    rooms: current.rooms.map((row) => ({ ...row, roomTypeId: '', ratePlanId: '' })),
+                  }));
+                }}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              >
+                <option value="">Select property</option>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <TextInput
-              label="Start date"
-              type="date"
-              value={manualForm.startDate}
-              onChange={(event) => setManualForm((current) => ({ ...current, startDate: event.target.value }))}
-              required
-            />
-            <TextInput
-              label="End date"
-              type="date"
-              value={manualForm.endDate}
-              onChange={(event) => setManualForm((current) => ({ ...current, endDate: event.target.value }))}
-              required
-            />
-          </div>
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <p className="mb-3 text-sm font-semibold text-slate-800">Section 2: Guest Details</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <TextInput label="Guest Name" value={form.guestName} onChange={(event) => setForm((current) => ({ ...current, guestName: event.target.value }))} required />
+              <TextInput label="Mobile" value={form.guestMobile} onChange={(event) => setForm((current) => ({ ...current, guestMobile: event.target.value }))} required />
+              <TextInput label="Email" type="email" value={form.guestEmail} onChange={(event) => setForm((current) => ({ ...current, guestEmail: event.target.value }))} />
+              <TextInput label="GST Number" value={form.gstNumber} onChange={(event) => setForm((current) => ({ ...current, gstNumber: event.target.value }))} />
+              <TextInput label="Pincode" value={form.guestPincode} onChange={(event) => setForm((current) => ({ ...current, guestPincode: event.target.value }))} />
+              <TextInput label="Guest State" value={form.guestState} onChange={(event) => setForm((current) => ({ ...current, guestState: event.target.value }))} />
+            </div>
+            <TextInput label="Address" value={form.guestAddress} onChange={(event) => setForm((current) => ({ ...current, guestAddress: event.target.value }))} />
+          </section>
 
-          <TextInput
-            label="Guest name"
-            value={manualForm.guestName}
-            onChange={(event) => setManualForm((current) => ({ ...current, guestName: event.target.value }))}
-            required
-          />
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <p className="mb-3 text-sm font-semibold text-slate-800">Section 3: Booking Details</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <TextInput label="Check-in Date" type="date" value={form.checkIn} onChange={(event) => setForm((current) => ({ ...current, checkIn: event.target.value }))} required />
+              <TextInput label="Check-out Date" type="date" value={form.checkOut} onChange={(event) => setForm((current) => ({ ...current, checkOut: event.target.value }))} required />
+              <TextInput label="Nights" value={String(nights)} readOnly />
+              <TextInput label="Payment Reference" value={form.paymentReference} onChange={(event) => setForm((current) => ({ ...current, paymentReference: event.target.value }))} />
+              <TextInput label="Special Note" value={form.specialNote} onChange={(event) => setForm((current) => ({ ...current, specialNote: event.target.value }))} />
+              <TextInput label="Paid Amount" type="number" min="0" step="0.01" value={String(form.paidAmount)} onChange={(event) => setForm((current) => ({ ...current, paidAmount: Number(event.target.value || 0) }))} />
+            </div>
+          </section>
 
-          <TextInput
-            label="Guest count"
-            type="number"
-            min="1"
-            max={selectedRoom?.maxCapacity || selectedRoom?.maxOccupancy || 1}
-            value={String(manualForm.guestsCount)}
-            onChange={(event) => setManualForm((current) => ({ ...current, guestsCount: Number(event.target.value || 1) }))}
-            required
-          />
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-800">Section 4: Room Table</p>
+              <button type="button" onClick={addRow} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">+ Add Row</button>
+            </div>
 
-          <p className="rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            Estimated total: <span className="font-bold text-slate-900">{formatCurrency(estimatedTotal)}</span>
-          </p>
+            <div className="overflow-auto rounded-xl border border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {ROOM_TABLE_COLUMNS.map((column) => (
+                      <th key={column} className="px-3 py-2 text-left text-xs font-semibold text-slate-600">{column}</th>
+                    ))}
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pricedRows.map((row, index) => {
+                    const availableRatePlans = row.roomType?.ratePlans || [];
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-2xl bg-brand-700 py-3 font-semibold text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Save booking
+                    return (
+                      <tr key={`row-${index}`} className="border-t border-slate-100">
+                        <td className="px-3 py-2">
+                          <select
+                            value={row.roomTypeId}
+                            onChange={(event) => updateRow(index, { roomTypeId: event.target.value, ratePlanId: '', manualPrice: false, pricePerNight: 0 })}
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1.5"
+                            required
+                          >
+                            <option value="">Select room</option>
+                            {propertyRows.map((roomType) => (
+                              <option key={roomType.id} value={roomType.id}>{roomType.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={row.ratePlanId}
+                            onChange={(event) => updateRow(index, { ratePlanId: event.target.value, manualPrice: false })}
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1.5"
+                            required
+                            disabled={!row.roomTypeId}
+                          >
+                            <option value="">Select plan</option>
+                            {availableRatePlans.map((ratePlan) => (
+                              <option key={ratePlan.id} value={ratePlan.id}>{ratePlan.mealPlanName}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="1" value={row.rooms} onChange={(event) => updateRow(index, { rooms: Number(event.target.value || 1) })} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" value={row.adults} onChange={(event) => updateRow(index, { adults: Number(event.target.value || 0) })} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" value={row.extraBed} onChange={(event) => updateRow(index, { extraBed: Number(event.target.value || 0) })} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" min="0" value={row.children} onChange={(event) => updateRow(index, { children: Number(event.target.value || 0) })} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={row.pricePerNight}
+                            onChange={(event) => updateRow(index, { pricePerNight: Number(event.target.value || 0), manualPrice: true })}
+                            className="w-32 rounded-lg border border-slate-200 px-2 py-1.5"
+                          />
+                        </td>
+                        <td className="px-3 py-2 font-semibold text-slate-800">{formatCurrency(row.totalCost)}</td>
+                        <td className="px-3 py-2">
+                          <button type="button" onClick={() => removeRow(index)} className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">Remove</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="mb-3 text-sm font-semibold text-slate-800">Pricing Breakdown</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              <p>Subtotal: <strong>{formatCurrency(summary.subtotal)}</strong></p>
+              <p>GST Rate: <strong>{summary.gstRate}%</strong></p>
+              <p>CGST: <strong>{formatCurrency(summary.cgst)}</strong></p>
+              <p>SGST: <strong>{formatCurrency(summary.sgst)}</strong></p>
+              <p>IGST: <strong>{formatCurrency(summary.igst)}</strong></p>
+              <p>Round Off (₹1): <strong>{formatCurrency(summary.roundOff)}</strong></p>
+              <p>Total Amount: <strong>{formatCurrency(summary.totalAmount)}</strong></p>
+              <p>Due Amount: <strong>{formatCurrency(summary.dueAmount)}</strong></p>
+            </div>
+          </section>
+
+          <button type="submit" disabled={busy} className="w-full rounded-2xl bg-brand-700 py-3 font-semibold text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60">
+            {editingBookingId ? 'Update Booking' : 'Create Booking'}
           </button>
         </form>
+      </Modal>
+
+      <Modal open={invoiceModalOpen} title="Invoice Preview" onClose={() => setInvoiceModalOpen(false)} panelClassName="max-w-6xl">
+        <iframe title="Invoice Preview" srcDoc={invoiceHtml} className="h-[75vh] w-full rounded-xl border border-slate-200" />
       </Modal>
     </div>
   );

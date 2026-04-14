@@ -62,9 +62,10 @@ const getRoomTypeBaseInventory = async (tx, roomTypeId) => {
   return Number(roomType.baseInventory ?? 0);
 };
 
-const reduceInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) => {
+const reduceInventoryInTransaction = async (tx, roomTypeId, startDate, endDate, quantity = 1) => {
   const dates = enumerateDatesExclusive(startDate, endDate);
   const baseInventory = await getRoomTypeBaseInventory(tx, roomTypeId);
+  const roomsToReduce = Math.max(1, Number(quantity || 1));
 
   for (const date of dates) {
     const existing = await tx.inventory.findUnique({
@@ -78,7 +79,7 @@ const reduceInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) 
     });
 
     const availableRooms = existing ? Number(existing.availableRooms) : baseInventory;
-    if (availableRooms <= 0) {
+    if (availableRooms < roomsToReduce) {
       throw new ApiError(409, 'Insufficient inventory for one or more dates');
     }
 
@@ -92,10 +93,10 @@ const reduceInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) 
       create: {
         roomTypeId,
         date,
-        availableRooms: availableRooms - 1,
+        availableRooms: availableRooms - roomsToReduce,
       },
       update: {
-        availableRooms: availableRooms - 1,
+        availableRooms: availableRooms - roomsToReduce,
       },
     });
   }
@@ -106,9 +107,10 @@ const reduceInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) 
   };
 };
 
-const restoreInventoryInTransaction = async (tx, roomTypeId, startDate, endDate) => {
+const restoreInventoryInTransaction = async (tx, roomTypeId, startDate, endDate, quantity = 1) => {
   const dates = enumerateDatesExclusive(startDate, endDate);
   const baseInventory = await getRoomTypeBaseInventory(tx, roomTypeId);
+  const roomsToRestore = Math.max(1, Number(quantity || 1));
 
   for (const date of dates) {
     const existing = await tx.inventory.findUnique({
@@ -133,10 +135,10 @@ const restoreInventoryInTransaction = async (tx, roomTypeId, startDate, endDate)
       create: {
         roomTypeId,
         date,
-        availableRooms: availableRooms + 1,
+        availableRooms: availableRooms + roomsToRestore,
       },
       update: {
-        availableRooms: availableRooms + 1,
+        availableRooms: availableRooms + roomsToRestore,
       },
     });
   }
@@ -285,22 +287,22 @@ const getInventoryCalendar = async ({ roomTypeId, startDate, endDate }, user) =>
   };
 };
 
-const reduceInventory = async (roomTypeId, startDate, endDate, txClient) => {
+const reduceInventory = async (roomTypeId, startDate, endDate, txClient, quantity = 1) => {
   const db = txClient || prisma;
   if (supportsTransaction(db)) {
-    return db.$transaction((tx) => reduceInventoryInTransaction(tx, roomTypeId, startDate, endDate));
+    return db.$transaction((tx) => reduceInventoryInTransaction(tx, roomTypeId, startDate, endDate, quantity));
   }
 
-  return reduceInventoryInTransaction(db, roomTypeId, startDate, endDate);
+  return reduceInventoryInTransaction(db, roomTypeId, startDate, endDate, quantity);
 };
 
-const restoreInventory = async (roomTypeId, startDate, endDate, txClient) => {
+const restoreInventory = async (roomTypeId, startDate, endDate, txClient, quantity = 1) => {
   const db = txClient || prisma;
   if (supportsTransaction(db)) {
-    return db.$transaction((tx) => restoreInventoryInTransaction(tx, roomTypeId, startDate, endDate));
+    return db.$transaction((tx) => restoreInventoryInTransaction(tx, roomTypeId, startDate, endDate, quantity));
   }
 
-  return restoreInventoryInTransaction(db, roomTypeId, startDate, endDate);
+  return restoreInventoryInTransaction(db, roomTypeId, startDate, endDate, quantity);
 };
 
 module.exports = {

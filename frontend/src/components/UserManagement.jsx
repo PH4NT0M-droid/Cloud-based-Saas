@@ -1,57 +1,163 @@
 import { useMemo, useState } from 'react';
 import Modal from './Modal';
 import TextInput from './forms/TextInput';
-import PermissionEditor from './PermissionEditor';
-import SearchSelect from './SearchSelect';
 
-const initialPermissions = {
-  canManageProperties: false,
-  canManageRooms: false,
-  canManagePricing: false,
-  canManageInventory: false,
-  manage_bookings: false,
+const propertyScopedPermissionOptions = [
+  { key: 'MANAGE_PROPERTY', label: 'Manage Property' },
+  { key: 'MANAGE_ROOMS', label: 'Manage Rooms' },
+  { key: 'MANAGE_BOOKINGS', label: 'Manage Bookings' },
+  { key: 'MANAGE_PRICING', label: 'Manage Pricing' },
+  { key: 'MANAGE_INVENTORY', label: 'Manage Inventory' },
+];
+
+const applyScopedPermissionInheritance = (permissions = []) => {
+  const next = new Set(permissions);
+
+  if (next.has('MANAGE_PROPERTY')) {
+    next.add('MANAGE_ROOMS');
+    next.add('MANAGE_BOOKINGS');
+    next.add('MANAGE_PRICING');
+    next.add('MANAGE_INVENTORY');
+  }
+
+  if (next.has('MANAGE_ROOMS')) {
+    next.add('MANAGE_PRICING');
+    next.add('MANAGE_INVENTORY');
+  }
+
+  return [...next];
 };
 
-function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAssignProperty, onRemoveProperty, loading }) {
+const isForcedByParent = (permissions = [], permission) => {
+  const active = new Set(permissions);
+
+  if (active.has('MANAGE_PROPERTY') && permission !== 'MANAGE_PROPERTY') {
+    return true;
+  }
+
+  if (active.has('MANAGE_ROOMS') && (permission === 'MANAGE_PRICING' || permission === 'MANAGE_INVENTORY')) {
+    return true;
+  }
+
+  return false;
+};
+
+const buildInitialForm = () => ({
+  name: '',
+  email: '',
+  password: '',
+});
+
+const normalizePropertyPermissions = (value = {}) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce((acc, [propertyId, permissions]) => {
+    if (!propertyId || !Array.isArray(permissions)) {
+      return acc;
+    }
+
+    const remapped = permissions
+      .filter((permission) => typeof permission === 'string' && permission.trim().length > 0)
+      .map((permission) => {
+        if (permission === 'VIEW_BOOKINGS') {
+          return 'MANAGE_BOOKINGS';
+        }
+
+        if (permission === 'EDIT_PROPERTY') {
+          return 'MANAGE_PROPERTY';
+        }
+
+        return permission;
+      });
+
+    const cleaned = applyScopedPermissionInheritance([...new Set(remapped)]);
+    if (cleaned.length > 0) {
+      acc[propertyId] = cleaned;
+    }
+    return acc;
+  }, {});
+};
+
+function UserManagement({ users, properties, onCreate, onUpdate, onDelete, loading }) {
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [search, setSearch] = useState('');
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    password: '',
-    permissions: initialPermissions,
-    propertyIds: [],
-  });
+  const [expandedProperty, setExpandedProperty] = useState(null);
+  const [propertySearch, setPropertySearch] = useState('');
+  const [propertyPermissions, setPropertyPermissions] = useState({});
+  const [form, setForm] = useState(buildInitialForm);
 
-  const filteredProperties = useMemo(
-    () => properties.filter((property) => property.name.toLowerCase().includes(search.toLowerCase())),
-    [properties, search],
-  );
+  const filteredProperties = useMemo(() => {
+    const needle = propertySearch.trim().toLowerCase();
+    if (!needle) {
+      return properties;
+    }
 
-  const propertyOptions = useMemo(
-    () =>
-      properties.map((property) => ({
-        value: property.id,
-        label: property.name,
-        meta: property.location,
-      })),
-    [properties],
-  );
+    return properties.filter((property) => {
+      const haystack = [property.name, property.location, property.city, property.state].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [properties, propertySearch]);
 
   const reset = () => {
-    setForm({ name: '', email: '', password: '', permissions: initialPermissions, propertyIds: [] });
-    setSearch('');
+    setForm(buildInitialForm());
+    setExpandedProperty(null);
+    setPropertySearch('');
+    setPropertyPermissions({});
     setEditingUser(null);
     setOpen(false);
   };
 
+  const toggleExpand = (propertyId) => {
+    setExpandedProperty((current) => (current === propertyId ? null : propertyId));
+  };
+
+  const togglePropertyPermission = (propertyId, permission) => {
+    setPropertyPermissions((current) => {
+      const existing = applyScopedPermissionInheritance(current[propertyId] || []);
+      const nextSet = new Set(existing);
+
+      if (nextSet.has(permission)) {
+        nextSet.delete(permission);
+
+        if (permission === 'MANAGE_PROPERTY') {
+          nextSet.delete('MANAGE_ROOMS');
+          nextSet.delete('MANAGE_BOOKINGS');
+          nextSet.delete('VIEW_BOOKINGS');
+          nextSet.delete('MANAGE_PRICING');
+          nextSet.delete('MANAGE_INVENTORY');
+        }
+
+        if (permission === 'MANAGE_ROOMS' && !nextSet.has('MANAGE_PROPERTY')) {
+          nextSet.delete('MANAGE_PRICING');
+          nextSet.delete('MANAGE_INVENTORY');
+        }
+      } else {
+        nextSet.add(permission);
+      }
+
+      const nextPermissions = applyScopedPermissionInheritance([...nextSet]);
+
+      if (nextPermissions.length === 0) {
+        const { [propertyId]: _omit, ...rest } = current;
+        return rest;
+      }
+
+      return {
+        ...current,
+        [propertyId]: nextPermissions,
+      };
+    });
+  };
+
   const submit = async (event) => {
     event.preventDefault();
+    const scopedPayload = normalizePropertyPermissions(propertyPermissions);
+
     const payload = {
       ...form,
-      permissions: form.permissions,
-      propertyIds: form.propertyIds,
+      propertyPermissions: scopedPayload,
     };
 
     if (!payload.password) {
@@ -67,21 +173,12 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
     reset();
   };
 
-  const assignPropertyToUser = async (userId, propertyId) => {
-    if (!propertyId) {
-      return;
-    }
-
-    await onAssignProperty({ userId, propertyId });
-  };
-
-  const removePropertyFromUser = async (userId, propertyId) => {
-    await onRemoveProperty({ userId, propertyId });
-  };
-
   const openCreate = () => {
     setEditingUser(null);
-    setForm({ name: '', email: '', password: '', permissions: initialPermissions, propertyIds: [] });
+    setForm(buildInitialForm());
+    setPropertySearch('');
+    setPropertyPermissions({});
+    setExpandedProperty(null);
     setOpen(true);
   };
 
@@ -91,9 +188,10 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
       name: user.name,
       email: user.email,
       password: '',
-      permissions: user.permissions || initialPermissions,
-      propertyIds: (user.managedProperties || []).map((property) => property.id),
     });
+    setPropertySearch('');
+    setPropertyPermissions(normalizePropertyPermissions(user.propertyPermissions || {}));
+    setExpandedProperty(null);
     setOpen(true);
   };
 
@@ -116,7 +214,6 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
               <th className="px-4 py-3 text-left font-semibold">Name</th>
               <th className="px-4 py-3 text-left font-semibold">Email</th>
               <th className="px-4 py-3 text-left font-semibold">Properties</th>
-              <th className="px-4 py-3 text-left font-semibold">Permissions</th>
               <th className="px-4 py-3 text-left font-semibold">Actions</th>
             </tr>
           </thead>
@@ -126,35 +223,7 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
                 <td className="px-4 py-3 font-semibold text-slate-900">{user.name}</td>
                 <td className="px-4 py-3 text-slate-600">{user.email}</td>
                 <td className="px-4 py-3 text-slate-600">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {(user.managedProperties || []).map((property) => (
-                        <button
-                          key={`${user.id}-${property.id}`}
-                          type="button"
-                          onClick={() => removePropertyFromUser(user.id, property.id)}
-                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-red-50 hover:text-red-700"
-                        >
-                          {property.name} ×
-                        </button>
-                      ))}
-                      {(user.managedProperties || []).length === 0 ? <span>Unassigned</span> : null}
-                    </div>
-                    <SearchSelect
-                      label=""
-                      options={propertyOptions.filter((property) => !(user.managedPropertyIds || []).includes(property.value))}
-                      value=""
-                      onChange={(propertyId) => assignPropertyToUser(user.id, propertyId)}
-                      placeholder="Assign property"
-                      emptyLabel="No available properties"
-                    />
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {Object.entries(user.permissions || {})
-                    .filter(([, enabled]) => enabled)
-                    .map(([key]) => key)
-                    .join(', ') || 'No permissions'}
+                  {(user.managedProperties || []).map((property) => property.name).join(', ') || 'Unassigned'}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
@@ -184,42 +253,72 @@ function UserManagement({ users, properties, onCreate, onUpdate, onDelete, onAss
             required={!editingUser}
           />
 
-          <PermissionEditor value={form.permissions} onChange={(permissions) => setForm((current) => ({ ...current, permissions }))} />
+          <div className="space-y-3 rounded-2xl border border-slate-200 p-3">
+            <p className="text-sm font-semibold text-slate-700">Assign Property</p>
+            <p className="text-xs text-slate-500">Property access is granted when at least one permission is selected for that property.</p>
 
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-slate-700">Assign properties by name</p>
             <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search properties..."
-              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+              value={propertySearch}
+              onChange={(event) => setPropertySearch(event.target.value)}
+              placeholder="Search property by name"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
             />
-            <div className="max-h-44 space-y-2 overflow-auto rounded-2xl border border-slate-200 p-3">
-              {filteredProperties.map((property) => {
-                const checked = form.propertyIds.includes(property.id);
-                return (
-                  <label key={property.id} className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-slate-50">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{property.name}</p>
-                      <p className="text-xs text-slate-500">{property.location}</p>
+
+            {filteredProperties.map((property) => (
+                <div key={`scoped-${property.id}`} className="rounded-2xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(property.id)}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50"
+                  >
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-sm font-bold text-slate-700">
+                      {expandedProperty === property.id ? '-' : '+'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900">{property.name}</span>
+                      {propertyPermissions[property.id]?.length ? (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Assigned</span>
+                      ) : null}
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => {
-                        setForm((current) => ({
-                          ...current,
-                          propertyIds: event.target.checked
-                            ? [...current.propertyIds, property.id]
-                            : current.propertyIds.filter((id) => id !== property.id),
-                        }));
-                      }}
-                      className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                    />
-                  </label>
-                );
-              })}
-            </div>
+                  </button>
+
+                  {expandedProperty === property.id ? (
+                    <div className="space-y-3 border-t border-slate-200 px-3 py-3">
+                      <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="font-semibold text-slate-900">{property.name}</p>
+                        <p>{property.city && property.state ? `${property.city}, ${property.state}` : property.location}</p>
+                        <p className="text-xs text-slate-500">ID: {property.id}</p>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {propertyScopedPermissionOptions.map((option) => (
+                          <label
+                            key={`${property.id}-${option.key}`}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                              isForcedByParent(propertyPermissions[property.id], option.key)
+                                ? 'border-slate-200 bg-slate-100 text-slate-400'
+                                : 'border-slate-200'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(propertyPermissions[property.id]?.includes(option.key))}
+                              disabled={isForcedByParent(propertyPermissions[property.id], option.key)}
+                              onChange={() => togglePropertyPermission(property.id, option.key)}
+                              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                            />
+                            <span className="font-medium text-slate-800">{option.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+
+            {filteredProperties.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 px-3 py-3 text-sm text-slate-500">No properties match your search.</p>
+            ) : null}
           </div>
 
           <button disabled={loading} className="w-full rounded-2xl bg-brand-700 py-3 font-semibold text-white hover:bg-brand-800">

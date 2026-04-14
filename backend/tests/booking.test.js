@@ -68,9 +68,13 @@ describe('Booking API', () => {
             canManageRooms: false,
             canManagePricing: false,
             canManageInventory: true,
-            manage_bookings: true,
+            manage_bookings: false,
           },
-          managedProperties: [{ id: 'prop-1', name: 'Sea View Stays', location: 'Goa' }],
+          managedProperties: [
+            { id: 'prop-1', name: 'Sea View Stays', location: 'Goa' },
+            { id: 'prop-2', name: 'Hill View Stay', location: 'Manali' },
+          ],
+          managerPropertyPermissions: [{ propertyId: 'prop-1', permissions: ['MANAGE_BOOKINGS'] }],
         });
       }
 
@@ -282,5 +286,101 @@ describe('Booking API', () => {
 
     expect(res.statusCode).toBe(201);
     expect(res.body.success).toBe(true);
+  });
+
+  it('creates manual booking when rate plan and price are omitted', async () => {
+    prisma.roomType.findUnique.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      property: { id: '22222222-2222-4222-8222-222222222222', name: 'Sea View Stays', location: 'Goa' },
+      basePrice: 100,
+    });
+
+    const tx = {
+      roomType: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: '11111111-1111-4111-8111-111111111111',
+          baseInventory: 2,
+        }),
+      },
+      inventory: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ availableRooms: 2 })
+          .mockResolvedValueOnce({ availableRooms: 2 }),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      booking: {
+        create: jest.fn().mockResolvedValue({ id: 'manual-2' }),
+      },
+      promotion: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      $transaction: jest.fn().mockImplementation(async (callback) => callback(tx)),
+    };
+
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    const res = await request(app)
+      .post('/api/bookings/manual')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        propertyId: '22222222-2222-4222-8222-222222222222',
+        guestName: 'Fallback Guest',
+        guestMobile: '9876543210',
+        checkInDate: '2026-10-01',
+        checkOutDate: '2026-10-03',
+        rooms: [
+          {
+            roomTypeId: '11111111-1111-4111-8111-111111111111',
+            rooms: 1,
+            adults: 2,
+          },
+        ],
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.success).toBe(true);
+  });
+
+  it('filters manager bookings to only properties with manage bookings permission', async () => {
+    prisma.booking.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get('/api/bookings').set('Authorization', `Bearer ${managerToken}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(prisma.booking.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          roomType: expect.objectContaining({
+            propertyId: { in: ['prop-1'] },
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('blocks manual booking create when manager lacks booking permission for property', async () => {
+    prisma.roomType.findUnique.mockResolvedValue({
+      id: '22222222-2222-4222-8222-222222222222',
+      property: { id: 'prop-2', name: 'Hill View Stay', location: 'Manali' },
+      basePrice: 120,
+      extraPersonPrice: 20,
+      baseCapacity: 2,
+      maxCapacity: 4,
+    });
+
+    const res = await request(app)
+      .post('/api/bookings/manual')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        roomTypeId: '22222222-2222-4222-8222-222222222222',
+        startDate: '2026-10-01',
+        endDate: '2026-10-03',
+        guestName: 'No Permission Guest',
+        guestsCount: 2,
+      });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.success).toBe(false);
   });
 });

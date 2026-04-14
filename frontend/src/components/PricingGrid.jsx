@@ -1,18 +1,14 @@
 import { useMemo, useState } from 'react';
 import { formatCurrency } from '../utils/format';
 
-function formatDateKey(date) {
-  return new Date(date).toISOString().split('T')[0];
-}
-
-function PricingGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoomTypeId }) {
+function PricingGrid({ roomTypes, dates, dataByRoomPlan = {}, onSave, loadingRowKey }) {
   const [editing, setEditing] = useState(null);
   const [draftValue, setDraftValue] = useState('');
 
   const visibleDates = useMemo(() => dates || [], [dates]);
 
-  const beginEdit = (roomTypeId, dateKey, currentValue) => {
-    setEditing({ roomTypeId, dateKey });
+  const beginEdit = (roomTypeId, ratePlanId, dateKey, currentValue) => {
+    setEditing({ roomTypeId, ratePlanId, dateKey });
     setDraftValue(String(currentValue ?? 0));
   };
 
@@ -21,7 +17,13 @@ function PricingGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoo
       return;
     }
 
-    await onSave({ roomTypeId: editing.roomTypeId, date: editing.dateKey, basePrice: Number(draftValue) });
+    await onSave({
+      roomTypeId: editing.roomTypeId,
+      ratePlanId: editing.ratePlanId,
+      date: editing.dateKey,
+      price: Number(draftValue),
+    });
+
     setEditing(null);
     setDraftValue('');
   };
@@ -31,9 +33,9 @@ function PricingGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoo
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Pricing grid</h3>
-          <p className="text-sm text-slate-500">Inline edit base price; effective price updates with rules.</p>
+          <p className="text-sm text-slate-500">Date-wise pricing per room and meal plan.</p>
         </div>
-        <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-700">Smart pricing</span>
+        <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-700">Room + plan rows</span>
       </div>
 
       <div className="overflow-auto">
@@ -41,62 +43,73 @@ function PricingGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoo
           <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600">
             <tr>
               <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left font-semibold">Room type</th>
-              {visibleDates.map((date) => (
-                <th key={date} className="min-w-36 border-b border-slate-200 px-4 py-3 text-center font-semibold">
-                  {date}
+              {visibleDates.map((dateKey) => (
+                <th key={dateKey} className="min-w-28 border-b border-slate-200 px-4 py-3 text-center font-semibold">
+                  {dateKey}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {roomTypes.map((roomType) => (
-              <tr key={roomType.id} className="border-b border-slate-100">
-                <td className="sticky left-0 z-10 border-r border-slate-100 bg-white px-4 py-3 font-semibold text-slate-900">
-                  <div>{roomType.name}</div>
-                  <div className="text-xs font-medium text-slate-500">Effective price grid</div>
-                </td>
-                {visibleDates.map((dateKey) => {
-                  const cell = dataByRoomType?.[roomType.id]?.[dateKey] || {};
-                  const isEditing = editing?.roomTypeId === roomType.id && editing?.dateKey === dateKey;
+            {roomTypes.flatMap((roomType) =>
+              (roomType.ratePlans || []).map((ratePlan) => {
+                const rowKey = `${roomType.id}:${ratePlan.id}`;
 
-                  return (
-                    <td key={dateKey} className="border-r border-slate-100 px-2 py-2 text-center">
-                      {isEditing ? (
-                        <input
-                          autoFocus
-                          type="number"
-                          value={draftValue}
-                          onChange={(event) => setDraftValue(event.target.value)}
-                          onBlur={commitEdit}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              commitEdit();
-                            }
-                            if (event.key === 'Escape') {
-                              setEditing(null);
-                            }
-                          }}
-                          className="w-28 rounded-xl border border-accent-300 px-3 py-2 text-center text-sm font-semibold outline-none"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => beginEdit(roomType.id, dateKey, cell.basePrice)}
-                          disabled={loadingRoomTypeId === roomType.id}
-                          className="flex h-16 w-28 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 transition hover:border-accent-300 hover:bg-accent-50"
-                        >
-                          <span className="text-sm font-bold text-slate-900">{formatCurrency(cell.basePrice ?? roomType.basePrice ?? 0)}</span>
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                            eff {formatCurrency(cell.effectivePrice ?? cell.basePrice ?? roomType.basePrice ?? 0)}
-                          </span>
-                        </button>
-                      )}
+                return (
+                  <tr key={rowKey} className="border-b border-slate-100">
+                    <td className="sticky left-0 z-10 border-r border-slate-100 bg-white px-4 py-3 font-semibold text-slate-900">
+                      <div>{roomType.name} - {String(ratePlan.mealPlanName || '').toUpperCase()}</div>
+                      <div className="text-xs font-medium text-slate-500">{ratePlan.isDefault ? 'Default plan' : 'Meal plan'}</div>
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
+                    {visibleDates.map((dateKey) => {
+                      const isEditing =
+                        editing?.roomTypeId === roomType.id &&
+                        editing?.ratePlanId === ratePlan.id &&
+                        editing?.dateKey === dateKey;
+
+                      const currentValue = dataByRoomPlan?.[rowKey]?.[dateKey] ?? 0;
+
+                      return (
+                        <td key={`${rowKey}:${dateKey}`} className="border-r border-slate-100 px-2 py-2 text-center">
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={draftValue}
+                              onChange={(event) => setDraftValue(event.target.value)}
+                              onBlur={commitEdit}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault();
+                                  commitEdit();
+                                }
+                                if (event.key === 'Escape') {
+                                  setEditing(null);
+                                  setDraftValue('');
+                                }
+                              }}
+                              className="w-28 rounded-xl border border-accent-300 px-3 py-2 text-center text-sm font-semibold outline-none"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => beginEdit(roomType.id, ratePlan.id, dateKey, currentValue)}
+                              disabled={loadingRowKey === rowKey}
+                              className="flex h-12 w-28 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-2 py-2 transition hover:border-accent-300 hover:bg-accent-50"
+                            >
+                              <span className="text-sm font-bold text-slate-900">{formatCurrency(currentValue)}</span>
+                              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">price</span>
+                            </button>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              }),
+            )}
           </tbody>
         </table>
       </div>

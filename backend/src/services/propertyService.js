@@ -123,12 +123,14 @@ const listProperties = async (user) => {
           id: true,
           name: true,
           maxOccupancy: true,
-          basePrice: true,
           extraPersonPrice: true,
           baseCapacity: true,
           maxCapacity: true,
           baseInventory: true,
           createdAt: true,
+          ratePlans: {
+            orderBy: [{ isDefault: 'desc' }, { mealPlanName: 'asc' }],
+          },
         },
       },
     },
@@ -156,8 +158,14 @@ const getPropertyById = async (id, user) => {
           inventories: {
             orderBy: { date: 'asc' },
           },
-          rates: {
+          roomPricings: {
             orderBy: { date: 'asc' },
+            include: {
+              ratePlan: true,
+            },
+          },
+          ratePlans: {
+            orderBy: [{ isDefault: 'desc' }, { mealPlanName: 'asc' }],
           },
         },
       },
@@ -179,7 +187,6 @@ const getPropertyOverview = async (id, user) => {
     id: roomType.id,
     name: roomType.name,
     maxOccupancy: roomType.maxOccupancy,
-    basePrice: roomType.basePrice,
     extraPersonPrice: roomType.extraPersonPrice,
     baseCapacity: roomType.baseCapacity,
     maxCapacity: roomType.maxCapacity,
@@ -189,11 +196,20 @@ const getPropertyOverview = async (id, user) => {
       date: inventory.date,
       availableRooms: inventory.availableRooms,
     })),
-    rates: roomType.rates.map((rate) => ({
-      id: rate.id,
-      date: rate.date,
-      basePrice: rate.basePrice,
-      otaModifier: rate.otaModifier,
+    roomPricings: roomType.roomPricings.map((row) => ({
+      id: row.id,
+      date: row.date,
+      roomTypeId: row.roomTypeId,
+      ratePlanId: row.ratePlanId,
+      mealPlanName: row.ratePlan?.mealPlanName,
+      price: row.price,
+    })),
+    ratePlans: roomType.ratePlans.map((ratePlan) => ({
+      id: ratePlan.id,
+      mealPlanName: ratePlan.mealPlanName,
+      extraBedPrice: ratePlan.extraBedPrice,
+      childPrice: ratePlan.childPrice,
+      isDefault: ratePlan.isDefault,
     })),
   }));
 
@@ -225,7 +241,7 @@ const updateProperty = async (id, payload, user, file) => {
   }
 
   assertPropertyAccess(property, user);
-  if (!canEditProperty(user)) {
+  if (!canEditProperty(user, property.id)) {
     throw new ApiError(403, 'Unauthorized');
   }
 

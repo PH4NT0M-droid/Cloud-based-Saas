@@ -1,9 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import TextInput from './forms/TextInput';
 
 const PIN_CODE_REGEX = /^[0-9]{6}$/;
 const MOBILE_REGEX = /^[0-9]{10}$/;
 const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+const getBackendBaseUrl = () => {
+  const configuredBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+  return configuredBase.replace(/\/api\/?$/, '');
+};
+
+const resolveLogoPreview = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  const stringValue = String(value);
+  if (stringValue.startsWith('http://') || stringValue.startsWith('https://') || stringValue.startsWith('blob:')) {
+    return stringValue;
+  }
+
+  const normalizedPath = stringValue.replace(/^\/+/, '');
+  return `${getBackendBaseUrl()}/${normalizedPath}`;
+};
 
 const buildInitialForm = (initialData = {}) => ({
   name: initialData.name || '',
@@ -16,40 +35,46 @@ const buildInitialForm = (initialData = {}) => ({
   email: initialData.email || '',
   website: initialData.website || '',
   gstNumber: initialData.gstNumber || '',
-  propertyLogo: null,
-  propertyLogoUrl: initialData.propertyLogo || '',
   description: initialData.description || '',
   longDescription: initialData.longDescription || '',
 });
 
 function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting = false }) {
   const [form, setForm] = useState(buildInitialForm(initialData));
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState('');
   const [errors, setErrors] = useState({});
   const [pinCodeLookupState, setPinCodeLookupState] = useState('idle');
   const [pinCodeLookupMessage, setPinCodeLookupMessage] = useState('');
 
   useEffect(() => {
     setForm(buildInitialForm(initialData));
+    setLogoFile(null);
+    setLogoPreview(resolveLogoPreview(initialData?.propertyLogo));
     setErrors({});
     setPinCodeLookupState('idle');
     setPinCodeLookupMessage('');
   }, [initialData]);
 
-  const previewSrc = useMemo(() => {
-    if (form.propertyLogo instanceof File) {
-      return URL.createObjectURL(form.propertyLogo);
+  useEffect(() => {
+    if (!(logoFile instanceof File) || !logoPreview.startsWith('blob:')) {
+      return undefined;
     }
 
-    return form.propertyLogoUrl || '';
-  }, [form.propertyLogo, form.propertyLogoUrl]);
-
-  useEffect(() => {
     return () => {
-      if (previewSrc && form.propertyLogo instanceof File) {
-        URL.revokeObjectURL(previewSrc);
-      }
+      URL.revokeObjectURL(logoPreview);
     };
-  }, [previewSrc, form.propertyLogo]);
+  }, [logoFile, logoPreview]);
+
+  const handleLogoChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
 
   useEffect(() => {
     const pinCode = String(form.pinCode || '').trim();
@@ -168,9 +193,9 @@ function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting 
       location: form.fullAddress,
     };
 
-    delete payload.propertyLogoUrl;
-
-    if (!(payload.propertyLogo instanceof File)) {
+    if (logoFile instanceof File) {
+      payload.propertyLogo = logoFile;
+    } else {
       delete payload.propertyLogo;
     }
 
@@ -278,15 +303,12 @@ function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting 
           <input
             type="file"
             accept="image/*"
-            onChange={(event) => {
-              const file = event.target.files?.[0] || null;
-              setForm((current) => ({ ...current, propertyLogo: file }));
-            }}
+            onChange={handleLogoChange}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         </label>
-        {previewSrc ? (
-          <img src={previewSrc} alt="Property logo preview" className="h-20 w-20 rounded-xl border border-slate-200 object-cover" />
+        {logoPreview ? (
+          <img src={logoPreview} alt="Property Logo" className="h-20 w-20 rounded-xl border border-slate-200 object-cover" />
         ) : null}
       </section>
 

@@ -6,6 +6,14 @@ const { normalizePermissions, canManageBookings, canEditProperty } = require('..
 const sanitizeAuthenticatedUser = (user) => {
   const mappedProperties = (user.propertyManagers || []).map((assignment) => assignment.property);
   const managedProperties = mappedProperties.length > 0 ? mappedProperties : user.managedProperties || [];
+  const propertyPermissions = (user.managerPropertyPermissions || []).reduce((acc, row) => {
+    if (!row?.propertyId) {
+      return acc;
+    }
+
+    acc[row.propertyId] = Array.isArray(row.permissions) ? row.permissions.filter((permission) => typeof permission === 'string') : [];
+    return acc;
+  }, {});
 
   return {
     id: user.id,
@@ -14,6 +22,7 @@ const sanitizeAuthenticatedUser = (user) => {
     email: user.email,
     role: user.role,
     permissions: normalizePermissions(user.permissions),
+    propertyPermissions,
     managedProperties,
     managedPropertyIds: managedProperties.map((property) => property.id),
     createdAt: user.createdAt,
@@ -41,6 +50,12 @@ const authenticate = async (req, res, next) => {
             property: {
               select: { id: true, name: true, location: true },
             },
+          },
+        },
+        managerPropertyPermissions: {
+          select: {
+            propertyId: true,
+            permissions: true,
           },
         },
       },
@@ -74,7 +89,8 @@ const authorizeManageBookings = (req, res, next) => {
 };
 
 const authorizePropertyEdit = (req, res, next) => {
-  if (!canEditProperty(req.user)) {
+  const targetPropertyId = req.params?.id || null;
+  if (!canEditProperty(req.user, targetPropertyId)) {
     return next(new ApiError(403, 'Unauthorized'));
   }
 

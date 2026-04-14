@@ -20,10 +20,16 @@ const canEditProperty = (user) => {
 
   const permissions = user.permissions;
   if (Array.isArray(permissions)) {
-    return permissions.includes('EDIT_PROPERTY');
+    return permissions.includes('MANAGE_PROPERTY') || permissions.includes('EDIT_PROPERTY');
   }
 
-  return Boolean(permissions?.canManageProperties || permissions?.EDIT_PROPERTY || permissions?.edit_property);
+  return Boolean(
+    permissions?.canManageProperties ||
+      permissions?.MANAGE_PROPERTY ||
+      permissions?.manage_property ||
+      permissions?.EDIT_PROPERTY ||
+      permissions?.edit_property,
+  );
 };
 
 function PropertiesPage() {
@@ -117,7 +123,7 @@ function PropertiesPage() {
         ))}
       </div>
 
-      <Modal open={open} title="Create property" onClose={() => setOpen(false)}>
+      <Modal open={open} title="Create property" onClose={() => setOpen(false)} panelClassName="max-w-4xl">
         <PropertyForm initialData={{}} onSubmit={submit} isSubmitting={creating} />
       </Modal>
     </div>

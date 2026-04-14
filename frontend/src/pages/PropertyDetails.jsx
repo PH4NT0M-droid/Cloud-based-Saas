@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import propertyService from '../services/propertyService';
 import inventoryService from '../services/inventoryService';
-import rateService from '../services/rateService';
 import roomService from '../services/roomService';
 import useAuth from '../hooks/useAuth';
 import LoadingSkeleton from '../components/LoadingSkeleton';
@@ -13,7 +12,6 @@ import Modal from '../components/Modal';
 import TextInput from '../components/forms/TextInput';
 import PropertyForm from '../components/PropertyForm';
 import { useToast } from '../components/ToastProvider';
-import { formatCurrency } from '../utils/format';
 
 const buildDateRange = (days = 14) => {
   const start = new Date();
@@ -49,6 +47,54 @@ const upsertByDate = (items = [], targetDate, patch) => {
   return next;
 };
 
+const normalizeRatePlans = (ratePlans = []) =>
+  ratePlans
+    .map((ratePlan) => ({
+      id: ratePlan.id,
+      mealPlanName: String(ratePlan.mealPlanName || '').trim().toUpperCase(),
+      extraBedPrice: String(ratePlan.extraBedPrice ?? ''),
+      childPrice: String(ratePlan.childPrice ?? ''),
+      isDefault: Boolean(ratePlan.isDefault),
+    }))
+    .filter((ratePlan) => ratePlan.mealPlanName.length > 0);
+
+const createEmptyRatePlan = (mealPlanName = '') => ({
+  mealPlanName,
+  extraBedPrice: '',
+  childPrice: '',
+  isDefault: false,
+});
+
+const ensureDefaultRatePlan = (ratePlans) => {
+  if (ratePlans.some((ratePlan) => ratePlan.isDefault)) {
+    return ratePlans;
+  }
+
+  return ratePlans.map((ratePlan, index) => (index === 0 ? { ...ratePlan, isDefault: true } : ratePlan));
+};
+
+const roomTypeToForm = (roomType = null) => {
+  const ratePlans = roomType?.ratePlans?.length
+    ? roomType.ratePlans
+    : [
+        {
+          mealPlanName: 'EP',
+          extraBedPrice: roomType?.extraPersonPrice ?? 0,
+          childPrice: '',
+          isDefault: true,
+        },
+      ];
+
+  return {
+    name: roomType?.name || '',
+    extraPersonPrice: String(roomType?.extraPersonPrice ?? 0),
+    baseCapacity: String(roomType?.baseCapacity ?? 1),
+    maxCapacity: String(roomType?.maxCapacity ?? roomType?.maxOccupancy ?? 1),
+    baseInventory: String(roomType?.baseInventory ?? 1),
+    ratePlans: ensureDefaultRatePlan(normalizeRatePlans(ratePlans)),
+  };
+};
+
 const canEditProperty = (user) => {
   if (!user) {
     return false;
@@ -60,10 +106,16 @@ const canEditProperty = (user) => {
 
   const permissions = user.permissions;
   if (Array.isArray(permissions)) {
-    return permissions.includes('EDIT_PROPERTY');
+    return permissions.includes('MANAGE_PROPERTY') || permissions.includes('EDIT_PROPERTY');
   }
 
-  return Boolean(permissions?.canManageProperties || permissions?.EDIT_PROPERTY || permissions?.edit_property);
+  return Boolean(
+    permissions?.canManageProperties ||
+      permissions?.MANAGE_PROPERTY ||
+      permissions?.manage_property ||
+      permissions?.EDIT_PROPERTY ||
+      permissions?.edit_property,
+  );
 };
 
 function PropertyDetails() {
@@ -74,6 +126,7 @@ function PropertyDetails() {
   const [range, setRange] = useState(buildDateRange());
   const [loading, setLoading] = useState(true);
   const [savingRoomTypeId, setSavingRoomTypeId] = useState(null);
+  const [savingPricingRowKey, setSavingPricingRowKey] = useState(null);
   const [error, setError] = useState(null);
   const [property, setProperty] = useState(null);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
@@ -83,15 +136,16 @@ function PropertyDetails() {
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState({
     name: '',
-    basePrice: '0',
     extraPersonPrice: '0',
     baseCapacity: '1',
     maxCapacity: '2',
     baseInventory: '1',
+    ratePlans: [createEmptyRatePlan('EP')],
   });
   const [bulkForm, setBulkForm] = useState({
     roomTypeId: '',
     type: 'price',
+    ratePlanId: 'ALL',
     operation: 'set',
     value: '0',
     startDate: range.startDate,
@@ -168,25 +222,20 @@ function PropertyDetails() {
   const pricingMatrix = useMemo(() => {
     const matrix = {};
     roomTypes.forEach((roomType) => {
-      matrix[roomType.id] = {};
-      roomType.rates.forEach((rate) => {
-        matrix[roomType.id][formatDateKey(rate.date)] = {
-          ...rate,
-          effectivePrice: rate.basePrice * rate.otaModifier,
-        };
-      });
+      const pricingRows = Array.isArray(roomType.roomPricings) ? roomType.roomPricings : [];
+      (roomType.ratePlans || []).forEach((ratePlan) => {
+        const rowKey = `${roomType.id}:${ratePlan.id}`;
+        matrix[rowKey] = {};
 
-      dates.forEach((dateKey) => {
-        if (!matrix[roomType.id][dateKey]) {
-          matrix[roomType.id][dateKey] = {
-            date: dateKey,
-            basePrice: roomType.basePrice ?? 0,
-            otaModifier: 1,
-            effectivePrice: roomType.basePrice ?? 0,
-          };
-        }
+        dates.forEach((dateKey) => {
+          const priceRow = pricingRows.find(
+            (row) => row.ratePlanId === ratePlan.id && formatDateKey(row.date) === dateKey,
+          );
+          matrix[rowKey][dateKey] = Number(priceRow?.price ?? 0);
+        });
       });
     });
+
     return matrix;
   }, [dates, roomTypes]);
 
@@ -219,10 +268,19 @@ function PropertyDetails() {
     }
   };
 
-  const handlePricingSave = async ({ roomTypeId, date, basePrice }) => {
+  const handlePricingSave = async ({ roomTypeId, ratePlanId, date, price }) => {
     try {
-      setSavingRoomTypeId(roomTypeId);
-      const updated = await rateService.update({ roomTypeId, date, basePrice, otaModifier: 1 });
+      setSavingPricingRowKey(`${roomTypeId}:${ratePlanId}`);
+      await roomService.bulkUpdate({
+        roomTypeId,
+        type: 'price',
+        operation: 'set',
+        ratePlanId,
+        applyToAll: false,
+        startDate: date,
+        endDate: date,
+        value: Number(price),
+      });
       setProperty((current) => ({
         ...current,
         roomTypes: current.roomTypes.map((roomType) => {
@@ -230,58 +288,120 @@ function PropertyDetails() {
             return roomType;
           }
 
+          const nextRoomPricings = upsertByDate(
+            (roomType.roomPricings || []).filter((row) => row.ratePlanId === ratePlanId),
+            date,
+            {
+              roomTypeId,
+              ratePlanId,
+              price: Number(price),
+            },
+          );
+
+          const untouched = (roomType.roomPricings || []).filter(
+            (row) => row.ratePlanId !== ratePlanId || formatDateKey(row.date) !== date,
+          );
+
           return {
             ...roomType,
-            rates: upsertByDate(roomType.rates, date, {
-              id: updated.id,
-              basePrice: updated.basePrice,
-              otaModifier: updated.otaModifier,
-            }),
+            roomPricings: [...untouched, ...nextRoomPricings],
           };
         }),
       }));
-      pushToast({ type: 'success', title: 'Pricing saved', message: `${formatCurrency(updated.basePrice)} updated for ${date}` });
+      pushToast({ type: 'success', title: 'Pricing saved', message: `Date-wise pricing updated for ${date}.` });
     } catch (saveError) {
       pushToast({ type: 'error', title: 'Pricing save failed', message: saveError.response?.data?.message || saveError.message });
       throw saveError;
     } finally {
-      setSavingRoomTypeId(null);
+      setSavingPricingRowKey(null);
     }
   };
 
   const openCreateRoomModal = () => {
     setEditingRoom(null);
-    setRoomForm({ name: '', basePrice: '0', extraPersonPrice: '0', baseCapacity: '1', maxCapacity: '2', baseInventory: '1' });
+    setRoomForm(roomTypeToForm());
     setRoomModalOpen(true);
   };
 
   const openEditRoomModal = (roomType) => {
     setEditingRoom(roomType);
-    setRoomForm({
-      name: roomType.name,
-      basePrice: String(roomType.basePrice ?? 0),
-      extraPersonPrice: String(roomType.extraPersonPrice ?? 0),
-      baseCapacity: String(roomType.baseCapacity ?? 1),
-      maxCapacity: String(roomType.maxCapacity ?? roomType.maxOccupancy ?? 1),
-      baseInventory: String(roomType.baseInventory ?? 1),
-    });
+    setRoomForm(roomTypeToForm(roomType));
     setRoomModalOpen(true);
+  };
+
+  const addRatePlanRow = () => {
+    setRoomForm((current) => ({
+      ...current,
+      ratePlans: [...current.ratePlans, createEmptyRatePlan()],
+    }));
+  };
+
+  const updateRatePlanRow = (index, field, value) => {
+    setRoomForm((current) => ({
+      ...current,
+      ratePlans: current.ratePlans.map((ratePlan, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...ratePlan,
+              [field]: value,
+            }
+          : ratePlan,
+      ),
+    }));
+  };
+
+  const removeRatePlanRow = (index) => {
+    setRoomForm((current) => {
+      const nextRatePlans = current.ratePlans.filter((_, currentIndex) => currentIndex !== index);
+      return {
+        ...current,
+        ratePlans: ensureDefaultRatePlan(nextRatePlans.length > 0 ? nextRatePlans : [createEmptyRatePlan('EP')]),
+      };
+    });
+  };
+
+  const setDefaultRatePlanRow = (index) => {
+    setRoomForm((current) => ({
+      ...current,
+      ratePlans: current.ratePlans.map((ratePlan, currentIndex) => ({
+        ...ratePlan,
+        isDefault: currentIndex === index,
+      })),
+    }));
   };
 
   const submitBulkUpdate = async (event) => {
     event.preventDefault();
     try {
-      await roomService.bulkUpdate({
-        roomTypeId: bulkForm.roomTypeId,
-        type: bulkForm.type,
-        operation: bulkForm.operation,
-        value: Number(bulkForm.value),
-        startDate: bulkForm.startDate,
-        endDate: bulkForm.endDate,
-      });
+      if (bulkForm.type === 'inventory') {
+        await roomService.bulkUpdate({
+          roomTypeId: bulkForm.roomTypeId,
+          type: 'inventory',
+          operation: bulkForm.operation,
+          value: Number(bulkForm.value),
+          startDate: bulkForm.startDate,
+          endDate: bulkForm.endDate,
+        });
+      } else {
+        const applyToAll = bulkForm.ratePlanId === 'ALL';
+        await roomService.bulkUpdate({
+          roomTypeId: bulkForm.roomTypeId,
+          type: 'price',
+          operation: bulkForm.operation,
+          ratePlanId: applyToAll ? 'ALL' : bulkForm.ratePlanId,
+          applyToAll,
+          startDate: bulkForm.startDate,
+          endDate: bulkForm.endDate,
+          value: Number(bulkForm.value),
+        });
+      }
 
       setBulkModalOpen(false);
-      pushToast({ type: 'success', title: 'Bulk update applied', message: 'Rates or inventory were updated for the selected date range.' });
+      pushToast({
+        type: 'success',
+        title: 'Bulk update applied',
+        message: `${bulkForm.type === 'inventory' ? 'Inventory' : 'Pricing'} updated for the selected date range.`,
+      });
       await loadProperty(range);
     } catch (bulkError) {
       pushToast({ type: 'error', title: 'Bulk update failed', message: bulkError.response?.data?.message || bulkError.message });
@@ -291,26 +411,33 @@ function PropertyDetails() {
   const submitRoom = async (event) => {
     event.preventDefault();
 
+    const normalizedRatePlans = ensureDefaultRatePlan(normalizeRatePlans(roomForm.ratePlans)).map((ratePlan) => ({
+      mealPlanName: ratePlan.mealPlanName,
+      extraBedPrice: ratePlan.extraBedPrice === '' ? undefined : Number(ratePlan.extraBedPrice),
+      childPrice: ratePlan.childPrice === '' ? undefined : Number(ratePlan.childPrice),
+      isDefault: ratePlan.isDefault,
+    }));
+
     try {
       if (editingRoom) {
         await roomService.update(editingRoom.id, {
           name: roomForm.name,
-          basePrice: Number(roomForm.basePrice),
           extraPersonPrice: Number(roomForm.extraPersonPrice),
           baseCapacity: Number(roomForm.baseCapacity),
           maxCapacity: Number(roomForm.maxCapacity),
           baseInventory: Number(roomForm.baseInventory),
+          ratePlans: normalizedRatePlans,
         });
         pushToast({ type: 'success', title: 'Room updated', message: `${roomForm.name} was updated.` });
       } else {
         await roomService.create({
           propertyId,
           name: roomForm.name,
-          basePrice: Number(roomForm.basePrice),
           extraPersonPrice: Number(roomForm.extraPersonPrice),
           baseCapacity: Number(roomForm.baseCapacity),
           maxCapacity: Number(roomForm.maxCapacity),
           baseInventory: Number(roomForm.baseInventory),
+          ratePlans: normalizedRatePlans,
         });
         pushToast({ type: 'success', title: 'Room added', message: `${roomForm.name} is now available.` });
       }
@@ -470,7 +597,7 @@ function PropertyDetails() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-black text-slate-900">Room management</h3>
-            <p className="text-sm text-slate-500">Add, edit, and delete room types for this property.</p>
+            <p className="text-sm text-slate-500">Add, edit, and delete room types plus shared inventory and rate plans.</p>
           </div>
           <button onClick={openCreateRoomModal} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
             Add Room
@@ -482,10 +609,22 @@ function PropertyDetails() {
             <div key={roomType.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">{roomType.name}</p>
               <p className="mt-1 text-xs text-slate-500">Capacity {roomType.baseCapacity} to {roomType.maxCapacity}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Base {formatCurrency(roomType.basePrice || 0)} + extra {formatCurrency(roomType.extraPersonPrice || 0)} / person
-              </p>
               <p className="mt-1 text-xs text-slate-500">Base inventory {roomType.baseInventory ?? 0}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(roomType.ratePlans || []).map((ratePlan) => (
+                  <span
+                    key={ratePlan.id || `${roomType.id}-${ratePlan.mealPlanName}`}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${ratePlan.isDefault ? 'bg-brand-100 text-brand-800' : 'bg-slate-100 text-slate-700'}`}
+                  >
+                    {ratePlan.mealPlanName}{ratePlan.isDefault ? ' • default' : ''}
+                  </span>
+                ))}
+                {!(roomType.ratePlans || []).length ? (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                    EP
+                  </span>
+                ) : null}
+              </div>
               <div className="mt-3 flex gap-2">
                 <button onClick={() => openEditRoomModal(roomType)} className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
                   Edit room
@@ -528,6 +667,10 @@ function PropertyDetails() {
               setBulkForm((current) => ({
                 ...current,
                 roomTypeId: roomTypes[0]?.id || '',
+                type: 'price',
+                ratePlanId: 'ALL',
+                operation: 'set',
+                value: '0',
                 startDate: range.startDate,
                 endDate: range.endDate,
               }));
@@ -541,7 +684,7 @@ function PropertyDetails() {
       </section>
 
       <InventoryGrid roomTypes={roomTypes} dates={dates} dataByRoomType={inventoryMatrix} onSave={handleInventorySave} loadingRoomTypeId={savingRoomTypeId} />
-      <PricingGrid roomTypes={roomTypes} dates={dates} dataByRoomType={pricingMatrix} onSave={handlePricingSave} loadingRoomTypeId={savingRoomTypeId} />
+      <PricingGrid roomTypes={roomTypes} dates={dates} dataByRoomPlan={pricingMatrix} onSave={handlePricingSave} loadingRowKey={savingPricingRowKey} />
 
       <Modal open={roomModalOpen} title={editingRoom ? 'Edit room' : 'Add room'} onClose={() => setRoomModalOpen(false)}>
         <form className="space-y-4" onSubmit={submitRoom}>
@@ -549,15 +692,6 @@ function PropertyDetails() {
             label="Room name"
             value={roomForm.name}
             onChange={(event) => setRoomForm((current) => ({ ...current, name: event.target.value }))}
-            required
-          />
-          <TextInput
-            label="Base price"
-            type="number"
-            min="0"
-            step="0.01"
-            value={roomForm.basePrice}
-            onChange={(event) => setRoomForm((current) => ({ ...current, basePrice: event.target.value }))}
             required
           />
           <TextInput
@@ -593,6 +727,71 @@ function PropertyDetails() {
             onChange={(event) => setRoomForm((current) => ({ ...current, baseInventory: event.target.value }))}
             required
           />
+
+          <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Rate Plans</p>
+                <p className="text-xs text-slate-500">Inventory stays shared at room type level. Add one or more meal-plan prices here.</p>
+              </div>
+              <button type="button" onClick={addRatePlanRow} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">
+                + Add Rate Plan
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {roomForm.ratePlans.map((ratePlan, index) => (
+                <div key={`${ratePlan.mealPlanName}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="grid gap-3 md:grid-cols-[1.2fr,1fr,1fr,auto] md:items-end">
+                    <label className="space-y-1 text-sm">
+                      <span className="font-semibold text-slate-700">Meal plan</span>
+                      <input
+                        value={ratePlan.mealPlanName}
+                        onChange={(event) => updateRatePlanRow(index, 'mealPlanName', event.target.value.toUpperCase())}
+                        className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                        placeholder="EP"
+                        required
+                      />
+                    </label>
+                    <TextInput
+                      label="Extra bed"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={ratePlan.extraBedPrice}
+                      onChange={(event) => updateRatePlanRow(index, 'extraBedPrice', event.target.value)}
+                    />
+                    <TextInput
+                      label="Child price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={ratePlan.childPrice}
+                      onChange={(event) => updateRatePlanRow(index, 'childPrice', event.target.value)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDefaultRatePlanRow(index)}
+                        className={`rounded-full px-3 py-2 text-xs font-semibold ${ratePlan.isDefault ? 'bg-brand-700 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'}`}
+                      >
+                        {ratePlan.isDefault ? 'Default' : 'Set default'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRatePlanRow(index)}
+                        disabled={roomForm.ratePlans.length === 1}
+                        className="rounded-full bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <button className="w-full rounded-2xl bg-brand-700 py-3 font-semibold text-white hover:bg-brand-800">
             {editingRoom ? 'Save room' : 'Create room'}
           </button>
@@ -621,13 +820,36 @@ function PropertyDetails() {
               <span className="font-semibold text-slate-700">Type</span>
               <select
                 value={bulkForm.type}
-                onChange={(event) => setBulkForm((current) => ({ ...current, type: event.target.value }))}
+                onChange={(event) =>
+                  setBulkForm((current) => ({
+                    ...current,
+                    type: event.target.value,
+                    ratePlanId: event.target.value === 'price' ? current.ratePlanId || 'ALL' : 'ALL',
+                  }))
+                }
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
               >
                 <option value="price">Price</option>
                 <option value="inventory">Inventory</option>
               </select>
             </label>
+            {bulkForm.type === 'price' ? (
+              <label className="space-y-1 text-sm">
+                <span className="font-semibold text-slate-700">Meal plan</span>
+                <select
+                  value={bulkForm.ratePlanId}
+                  onChange={(event) => setBulkForm((current) => ({ ...current, ratePlanId: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                >
+                  <option value="ALL">ALL</option>
+                  {(roomTypes.find((roomType) => roomType.id === bulkForm.roomTypeId)?.ratePlans || []).map((ratePlan) => (
+                    <option key={ratePlan.id} value={ratePlan.id}>
+                      {String(ratePlan.mealPlanName || '').toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="space-y-1 text-sm">
               <span className="font-semibold text-slate-700">Operation</span>
               <select
@@ -675,7 +897,7 @@ function PropertyDetails() {
         </form>
       </Modal>
 
-      <Modal open={propertyModalOpen} title="Edit property" onClose={() => setPropertyModalOpen(false)}>
+      <Modal open={propertyModalOpen} title="Edit property" onClose={() => setPropertyModalOpen(false)} panelClassName="max-w-4xl">
         <PropertyForm initialData={propertyForm} onSubmit={savePropertyInfo} isEditMode isSubmitting={propertySaving} />
       </Modal>
     </div>

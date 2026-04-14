@@ -48,6 +48,41 @@ const createManualBooking = async (req, res, next) => {
   }
 };
 
+const updateBooking = async (req, res, next) => {
+  try {
+    const booking = await bookingService.updateBooking(req.params.id, req.body, req.user);
+    return res.status(200).json({
+      success: true,
+      data: booking,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const previewInvoice = async (req, res, next) => {
+  try {
+    const html = await bookingService.getInvoiceHtml(req.params.id, req.user);
+    return res.status(200).json({
+      success: true,
+      data: { html },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getInvoice = async (req, res, next) => {
+  try {
+    const pdfBuffer = await bookingService.getInvoicePdfBuffer(req.params.id, req.user);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${req.params.id}.pdf"`);
+    return res.status(200).send(pdfBuffer);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const cancelBooking = async (req, res, next) => {
   try {
     const booking = await bookingService.updateBookingStatus(req.params.id, 'CANCELLED', req.user);
@@ -77,6 +112,9 @@ module.exports = {
   getBookingById,
   updateBookingStatus,
   createManualBooking,
+  updateBooking,
+  previewInvoice,
+  getInvoice,
   cancelBooking,
   syncBookings,
 };

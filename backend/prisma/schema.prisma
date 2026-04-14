@@ -28,6 +28,8 @@ model User {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   propertyManagers PropertyManager[]
+  managerPropertyPermissions ManagerPropertyPermission[]
+  createdBookings  Booking[]         @relation("BookingCreator")
 
   @@map("users")
 }
@@ -49,7 +51,9 @@ model Property {
   description      String
   longDescription  String?
   roomTypes        RoomType[]
+  bookings         Booking[]
   propertyManagers PropertyManager[]
+  managerPropertyPermissions ManagerPropertyPermission[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -70,6 +74,20 @@ model PropertyManager {
   @@map("property_managers")
 }
 
+model ManagerPropertyPermission {
+  id          String   @id @default(uuid())
+  managerId   String
+  propertyId  String
+  permissions Json
+  manager     User     @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([managerId, propertyId])
+  @@index([managerId])
+  @@index([propertyId])
+  @@map("manager_property_permissions")
+}
+
 model RoomType {
   id           String   @id @default(uuid())
   propertyId   String
@@ -84,7 +102,10 @@ model RoomType {
   createdAt    DateTime @default(now())
   inventories  Inventory[]
   rates        Rate[]
+  ratePlans    RatePlan[]
+  roomPricings RoomPricing[]
   bookings     Booking[]
+  bookingRooms BookingRoom[]
 
   @@index([propertyId])
   @@map("room_types")
@@ -119,24 +140,111 @@ model Rate {
   @@map("rates")
 }
 
+model RatePlan {
+  id            String   @id @default(uuid())
+  roomTypeId    String
+  roomType      RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  mealPlanName  String
+  extraBedPrice Float?
+  childPrice    Float?
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  roomPricings  RoomPricing[]
+  bookings      Booking[]
+  bookingRooms  BookingRoom[]
+
+  @@unique([roomTypeId, mealPlanName])
+  @@index([roomTypeId])
+  @@map("rate_plans")
+}
+
+model RoomPricing {
+  id         String   @id @default(uuid())
+  roomTypeId String
+  ratePlanId String
+  date       DateTime
+  price      Float
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  ratePlan   RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([roomTypeId, ratePlanId, date])
+  @@index([roomTypeId, date])
+  @@index([ratePlanId, date])
+  @@map("room_pricings")
+}
+
 model Booking {
   id        String        @id @default(uuid())
   otaSource String
+  propertyId String?
+  property   Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   roomTypeId String
   roomType  RoomType      @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  ratePlanId String?
+  ratePlan   RatePlan?    @relation(fields: [ratePlanId], references: [id], onDelete: SetNull)
+  guestMobile String?
+  guestEmail String?
+  gstNumber String?
+  guestAddress String?
+  guestState String?
   checkIn   DateTime
   checkOut  DateTime
+  nights    Int            @default(0)
+  totalRooms Int           @default(0)
   guestName String
   guestsCount Int          @default(1) @map("guests_count")
+  subtotal   Float         @default(0)
+  gstRate    Float         @default(0)
+  cgst       Float         @default(0)
+  sgst       Float         @default(0)
+  igst       Float         @default(0)
+  roundOff   Float         @default(0)
+  totalAmount Float        @default(0)
+  paidAmount Float         @default(0)
+  dueAmount  Float         @default(0)
+  paymentReference String?
+  specialNote String?
+  createdById String?
+  createdBy  User?         @relation("BookingCreator", fields: [createdById], references: [id], onDelete: SetNull)
   status    BookingStatus @default(CONFIRMED)
   totalPrice Float?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  bookingRooms BookingRoom[]
 
   @@unique([otaSource, roomTypeId, checkIn, guestName])
+  @@index([propertyId])
   @@index([roomTypeId])
+  @@index([ratePlanId])
+  @@index([createdById])
   @@index([checkIn, checkOut])
   @@map("bookings")
+}
+
+model BookingRoom {
+  id            String   @id @default(uuid())
+  bookingId     String
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  roomTypeId    String
+  roomType      RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
+  ratePlanId    String?
+  ratePlan      RatePlan? @relation(fields: [ratePlanId], references: [id], onDelete: SetNull)
+  rooms         Int      @default(1)
+  adults        Int      @default(1)
+  extraBed      Int      @default(0)
+  children      Int      @default(0)
+  pricePerNight Float    @default(0)
+  totalCost     Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([bookingId])
+  @@index([roomTypeId])
+  @@index([ratePlanId])
+  @@map("booking_rooms")
 }
 
 model Notification {

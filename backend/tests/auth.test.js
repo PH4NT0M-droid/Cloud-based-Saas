@@ -49,6 +49,39 @@ describe('Auth API', () => {
       expect(res.body.data.token).toBeDefined();
     });
 
+    it('expands property edit permission to room permissions', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 12);
+
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-2',
+        name: 'Maya',
+        email: 'maya@example.com',
+        passwordHash,
+        role: 'MANAGER',
+        permissions: {
+          canManageProperties: true,
+          manage_bookings: false,
+        },
+        managedProperties: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await request(app).post('/api/auth/login').send({
+        email: 'maya@example.com',
+        password: 'Password@123',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.user.permissions).toMatchObject({
+        canManageProperties: true,
+        canManageRooms: true,
+        canManagePricing: true,
+        canManageInventory: true,
+        manage_bookings: false,
+      });
+    });
+
     it('returns 401 for invalid credentials', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 

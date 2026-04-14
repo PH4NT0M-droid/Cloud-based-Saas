@@ -99,8 +99,6 @@ function AdminPanel() {
         onCreate={(payload) => wrapAction(() => adminService.createUser(payload))}
         onUpdate={(id, payload) => wrapAction(() => adminService.updateUser(id, payload))}
         onDelete={(id) => wrapAction(() => adminService.deleteUser(id))}
-        onAssignProperty={(payload) => wrapAction(() => adminService.assignProperty(payload))}
-        onRemoveProperty={(payload) => wrapAction(() => adminService.removeProperty(payload))}
       />
     </div>
   );

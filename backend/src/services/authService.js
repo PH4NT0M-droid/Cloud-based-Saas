@@ -4,12 +4,26 @@ const ApiError = require('../utils/ApiError');
 const { signToken } = require('../utils/jwt');
 const { normalizePermissions } = require('./accessControl');
 
+const mapPropertyPermissions = (rows = []) =>
+  rows.reduce((acc, row) => {
+    if (!row?.propertyId) {
+      return acc;
+    }
+
+    const scoped = row.permissions;
+    acc[row.propertyId] = Array.isArray(scoped)
+      ? scoped.filter((permission) => typeof permission === 'string')
+      : [];
+    return acc;
+  }, {});
+
 const sanitizeUser = (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
   role: user.role,
   permissions: normalizePermissions(user.permissions),
+  propertyPermissions: mapPropertyPermissions(user.managerPropertyPermissions),
   managedProperties: (user.managedProperties || user.propertyManagers?.map((assignment) => assignment.property) || []).map((property) => ({
     id: property.id,
     name: property.name,
@@ -31,6 +45,12 @@ const login = async ({ email, password }) => {
           property: {
             select: { id: true, name: true, location: true },
           },
+        },
+      },
+      managerPropertyPermissions: {
+        select: {
+          propertyId: true,
+          permissions: true,
         },
       },
     },

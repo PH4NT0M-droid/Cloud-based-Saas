@@ -1,4 +1,5 @@
 const roomService = require('../services/roomService');
+const pricingService = require('../services/pricingService');
 
 const createRoomType = async (req, res, next) => {
   try {
@@ -60,10 +61,23 @@ const bulkUpdateRoomType = async (req, res, next) => {
   }
 };
 
+const getPricingGrid = async (req, res, next) => {
+  try {
+    const result = await pricingService.getPricingGrid(req.query, req.user);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createRoomType,
   listRoomTypes,
   updateRoomType,
   deleteRoomType,
   bulkUpdateRoomType,
+  getPricingGrid,
 };

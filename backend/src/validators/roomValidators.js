@@ -1,5 +1,51 @@
 const { body, param, query } = require('express-validator');
 
+const ratePlanShapeValidator = body('ratePlans').optional().custom((value) => {
+  if (value === null || value === undefined) {
+    return true;
+  }
+
+  const plans = Array.isArray(value) ? value : typeof value === 'object' ? Object.values(value) : null;
+
+  if (!plans) {
+    throw new Error('ratePlans must be an array or object');
+  }
+
+  if (plans.length === 0) {
+    throw new Error('ratePlans must include at least one plan');
+  }
+
+  let defaultCount = 0;
+  const names = new Set();
+
+  for (const plan of plans) {
+    if (typeof plan !== 'object' || plan === null) {
+      throw new Error('Each rate plan must be an object');
+    }
+
+    const mealPlanName = String(plan.mealPlanName || plan.name || plan.key || '').trim();
+    if (!mealPlanName) {
+      throw new Error('Each rate plan must include mealPlanName');
+    }
+
+    const normalizedName = mealPlanName.toUpperCase();
+    if (names.has(normalizedName)) {
+      throw new Error('Rate plan names must be unique');
+    }
+    names.add(normalizedName);
+
+    if (plan.isDefault) {
+      defaultCount += 1;
+    }
+  }
+
+  if (defaultCount > 1) {
+    throw new Error('Only one rate plan can be default');
+  }
+
+  return true;
+});
+
 const createRoomValidator = [
   body('propertyId').isUUID().withMessage('propertyId must be a valid UUID'),
   body('name').isString().trim().isLength({ min: 2, max: 120 }).withMessage('Name must be 2-120 characters'),
@@ -14,6 +60,7 @@ const createRoomValidator = [
   body('base_inventory').optional().isInt({ min: 0 }).withMessage('base_inventory must be an integer greater than or equal to 0'),
   body('baseInventory').optional().isInt({ min: 0 }).withMessage('baseInventory must be an integer greater than or equal to 0'),
   body('maxOccupancy').optional().isInt({ min: 1, max: 20 }).withMessage('maxOccupancy must be an integer between 1 and 20'),
+  ratePlanShapeValidator,
   body().custom((value) => {
     const baseCapacity = Number(value.baseCapacity ?? value.base_capacity ?? 1);
     const maxCapacity = Number(value.maxCapacity ?? value.max_capacity ?? value.maxOccupancy ?? 0);
@@ -44,6 +91,7 @@ const updateRoomValidator = [
   body('base_inventory').optional().isInt({ min: 0 }).withMessage('base_inventory must be an integer greater than or equal to 0'),
   body('baseInventory').optional().isInt({ min: 0 }).withMessage('baseInventory must be an integer greater than or equal to 0'),
   body('maxOccupancy').optional().isInt({ min: 1, max: 20 }).withMessage('maxOccupancy must be an integer between 1 and 20'),
+  ratePlanShapeValidator,
   body().custom((value) => {
     const baseCapacity = value.baseCapacity ?? value.base_capacity;
     const maxCapacity = value.maxCapacity ?? value.max_capacity ?? value.maxOccupancy;
@@ -56,6 +104,17 @@ const updateRoomValidator = [
 
 const listRoomsValidator = [
   query('propertyId').optional().isUUID().withMessage('propertyId must be a valid UUID'),
+];
+
+const pricingGridValidator = [
+  query('propertyId').optional().isUUID().withMessage('propertyId must be a valid UUID'),
+  query('roomTypeId').optional().isUUID().withMessage('roomTypeId must be a valid UUID'),
+  query('startDate').isISO8601().withMessage('startDate must be a valid ISO date'),
+  query('endDate')
+    .isISO8601()
+    .withMessage('endDate must be a valid ISO date')
+    .custom((value, { req }) => new Date(value) >= new Date(req.query.startDate))
+    .withMessage('endDate must be on or after startDate'),
 ];
 
 const roomIdValidator = [param('id').isUUID().withMessage('Room type id must be a valid UUID')];
@@ -84,6 +143,8 @@ const bulkUpdateRoomValidator = [
   body('operation').isIn(['increase', 'decrease', 'set']).withMessage('operation must be increase, decrease, or set'),
   body('type').isIn(['price', 'inventory']).withMessage('type must be price or inventory'),
   body('value').isFloat({ min: 0 }).withMessage('value must be greater than or equal to 0'),
+   body('ratePlanId').optional().isString().withMessage('ratePlanId must be a string'),
+   body('applyToAll').optional().isBoolean().withMessage('applyToAll must be a boolean'),
 ];
 
 module.exports = {
@@ -92,4 +153,5 @@ module.exports = {
   listRoomsValidator,
   roomIdValidator,
   bulkUpdateRoomValidator,
+  pricingGridValidator,
 };

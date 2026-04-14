@@ -13,12 +13,82 @@ const managerInclude = {
       propertyId: true,
     },
   },
+  managerPropertyPermissions: {
+    select: {
+      propertyId: true,
+      permissions: true,
+    },
+  },
 };
 
 const withManagedProperties = (user) => ({
   ...user,
   managedProperties: (user.propertyManagers || []).map((assignment) => assignment.property),
+  propertyPermissions: (user.managerPropertyPermissions || []).reduce((acc, row) => {
+    if (!row?.propertyId) {
+      return acc;
+    }
+
+    acc[row.propertyId] = Array.isArray(row.permissions)
+      ? row.permissions.filter((permission) => typeof permission === 'string')
+      : [];
+    return acc;
+  }, {}),
 });
+
+const normalizePropertyIds = (propertyIds = []) => [...new Set(propertyIds.filter(Boolean))];
+
+const normalizePropertyPermissions = (propertyPermissions = {}) => {
+  if (!propertyPermissions || typeof propertyPermissions !== 'object' || Array.isArray(propertyPermissions)) {
+    return {};
+  }
+
+  return Object.entries(propertyPermissions).reduce((acc, [propertyId, permissions]) => {
+    if (!propertyId || !Array.isArray(permissions)) {
+      return acc;
+    }
+
+    acc[propertyId] = [
+      ...new Set(
+        permissions
+          .filter((permission) => typeof permission === 'string' && permission.trim().length > 0)
+          .map((permission) => {
+            if (permission === 'VIEW_BOOKINGS') {
+              return 'MANAGE_BOOKINGS';
+            }
+
+            if (permission === 'EDIT_PROPERTY') {
+              return 'MANAGE_PROPERTY';
+            }
+
+            return permission;
+          }),
+      ),
+    ];
+    return acc;
+  }, {});
+};
+
+const assertPropertyIdsExist = async (propertyIds = []) => {
+  const uniquePropertyIds = normalizePropertyIds(propertyIds);
+
+  if (uniquePropertyIds.length === 0) {
+    return uniquePropertyIds;
+  }
+
+  const existingProperties = await prisma.property.findMany({
+    where: { id: { in: uniquePropertyIds } },
+    select: { id: true },
+  });
+
+  if (existingProperties.length !== uniquePropertyIds.length) {
+    const existingIds = new Set(existingProperties.map((property) => property.id));
+    const missingIds = uniquePropertyIds.filter((propertyId) => !existingIds.has(propertyId));
+    throw new ApiError(400, `Invalid property ids: ${missingIds.join(', ')}`);
+  }
+
+  return uniquePropertyIds;
+};
 
 const assertManagerExists = async (id) => {
   const user = await prisma.user.findUnique({ where: { id } });
@@ -48,17 +118,42 @@ const setManagerPropertyAssignments = async (tx, userId, propertyIds) => {
     where: { userId },
   });
 
-  if (!propertyIds || propertyIds.length === 0) {
+  const uniquePropertyIds = normalizePropertyIds(propertyIds);
+
+  if (uniquePropertyIds.length === 0) {
     return;
   }
 
   await tx.propertyManager.createMany({
-    data: propertyIds.map((propertyId) => ({ userId, propertyId })),
+    data: uniquePropertyIds.map((propertyId) => ({ userId, propertyId })),
     skipDuplicates: true,
   });
 };
 
-const createManager = async ({ name, email, password, permissions, propertyIds = [] }) => {
+const setManagerPropertyPermissions = async (tx, userId, propertyPermissions = {}) => {
+  const normalized = normalizePropertyPermissions(propertyPermissions);
+  const scopedPropertyIds = Object.keys(normalized);
+
+  if (scopedPropertyIds.length === 0) {
+    return;
+  }
+
+  for (const propertyId of scopedPropertyIds) {
+    await tx.managerPropertyPermission.upsert({
+      where: { managerId_propertyId: { managerId: userId, propertyId } },
+      create: {
+        managerId: userId,
+        propertyId,
+        permissions: normalized[propertyId],
+      },
+      update: {
+        permissions: normalized[propertyId],
+      },
+    });
+  }
+};
+
+const createManager = async ({ name, email, password, permissions, propertyIds = [], propertyPermissions = {} }) => {
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     throw new ApiError(409, 'Email already in use');
@@ -66,6 +161,8 @@ const createManager = async ({ name, email, password, permissions, propertyIds =
 
   const passwordHash = await bcrypt.hash(password, 12);
   const normalizedPermissions = normalizePermissions(permissions);
+  const normalizedPropertyPermissions = normalizePropertyPermissions(propertyPermissions);
+  const normalizedPropertyIds = await assertPropertyIdsExist([...propertyIds, ...Object.keys(normalizedPropertyPermissions)]);
 
   const manager = await prisma.user.create({
     data: {
@@ -78,7 +175,8 @@ const createManager = async ({ name, email, password, permissions, propertyIds =
   });
 
   await prisma.$transaction(async (tx) => {
-    await setManagerPropertyAssignments(tx, manager.id, propertyIds);
+    await setManagerPropertyAssignments(tx, manager.id, normalizedPropertyIds);
+    await setManagerPropertyPermissions(tx, manager.id, normalizedPropertyPermissions);
   });
 
   const created = await prisma.user.findUnique({
@@ -92,6 +190,14 @@ const createManager = async ({ name, email, password, permissions, propertyIds =
 const updateManager = async (id, payload) => {
   const existing = await assertManagerExists(id);
   const nextPassword = typeof payload.password === 'string' ? payload.password.trim() : '';
+  const normalizedPropertyPermissions =
+    payload.propertyPermissions && typeof payload.propertyPermissions === 'object'
+      ? normalizePropertyPermissions(payload.propertyPermissions)
+      : null;
+  const normalizedPropertyIds =
+    Array.isArray(payload.propertyIds) || normalizedPropertyPermissions
+      ? await assertPropertyIdsExist([...(Array.isArray(payload.propertyIds) ? payload.propertyIds : []), ...Object.keys(normalizedPropertyPermissions || {})])
+      : null;
 
   if (payload.email && payload.email !== existing.email) {
     const taken = await prisma.user.findUnique({ where: { email: payload.email } });
@@ -111,8 +217,19 @@ const updateManager = async (id, payload) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    if (Array.isArray(payload.propertyIds)) {
-      await setManagerPropertyAssignments(tx, id, payload.propertyIds);
+    if (normalizedPropertyIds) {
+      await setManagerPropertyAssignments(tx, id, normalizedPropertyIds);
+
+      await tx.managerPropertyPermission.deleteMany({
+        where: {
+          managerId: id,
+          propertyId: { notIn: normalizedPropertyIds },
+        },
+      });
+    }
+
+    if (normalizedPropertyPermissions) {
+      await setManagerPropertyPermissions(tx, id, normalizedPropertyPermissions);
     }
 
     await tx.user.update({
@@ -134,6 +251,7 @@ const deleteManager = async (id) => {
 
   await prisma.$transaction(async (tx) => {
     await tx.propertyManager.deleteMany({ where: { userId: id } });
+    await tx.managerPropertyPermission.deleteMany({ where: { managerId: id } });
 
     await tx.user.delete({ where: { id } });
   });
@@ -163,6 +281,10 @@ const removeProperty = async (userId, propertyId) => {
 
   await prisma.propertyManager.deleteMany({
     where: { userId, propertyId },
+  });
+
+  await prisma.managerPropertyPermission.deleteMany({
+    where: { managerId: userId, propertyId },
   });
 
   return { userId, propertyId };

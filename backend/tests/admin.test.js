@@ -17,6 +17,10 @@ jest.mock('../src/config/prisma', () => ({
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+  managerPropertyPermission: {
+    deleteMany: jest.fn(),
+    upsert: jest.fn(),
+  },
   $transaction: jest.fn(),
   $disconnect: jest.fn(),
 }));
