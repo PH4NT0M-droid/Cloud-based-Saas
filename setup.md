@@ -13,9 +13,7 @@ Terminal 2 (backend):
 
 ```powershell
 Set-Location "D:\Desktop\Projects\Cloud Based Saas\backend"
-npx prisma db push
-npx prisma generate
-npm run dev
+npm start
 ```
 
 Terminal 3 (frontend):

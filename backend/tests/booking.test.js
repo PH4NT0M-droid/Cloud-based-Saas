@@ -14,8 +14,8 @@ jest.mock('../src/config/prisma', () => ({
   roomType: {
     findUnique: jest.fn(),
   },
-  rate: {
-    findMany: jest.fn(),
+  roomPricing: {
+    findUnique: jest.fn(),
   },
   inventory: {
     findMany: jest.fn(),
@@ -38,6 +38,9 @@ jest.mock('../src/services/ota/otaService', () => ({
 const prisma = require('../src/config/prisma');
 const otaService = require('../src/services/ota/otaService');
 const app = require('../src/app');
+
+const propertyIdOne = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const propertyIdTwo = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const adminToken = jwt.sign({ sub: 'admin-1', role: 'ADMIN', email: 'admin@test.com' }, process.env.JWT_SECRET, {
   expiresIn: '1d',
@@ -71,10 +74,10 @@ describe('Booking API', () => {
             manage_bookings: false,
           },
           managedProperties: [
-            { id: 'prop-1', name: 'Sea View Stays', location: 'Goa' },
-            { id: 'prop-2', name: 'Hill View Stay', location: 'Manali' },
+            { id: propertyIdOne, name: 'Sea View Stays', location: 'Goa' },
+            { id: propertyIdTwo, name: 'Hill View Stay', location: 'Manali' },
           ],
-          managerPropertyPermissions: [{ propertyId: 'prop-1', permissions: ['MANAGE_BOOKINGS'] }],
+          managerPropertyPermissions: [{ propertyId: propertyIdOne, permissions: ['MANAGE_BOOKINGS'] }],
         });
       }
 
@@ -103,17 +106,10 @@ describe('Booking API', () => {
       roomType: {
         findUnique: jest.fn().mockResolvedValue({
           id: '11111111-1111-4111-8111-111111111111',
-          maxOccupancy: 10,
-          basePrice: 100,
-          propertyId: 'prop-1',
+          propertyId: propertyIdOne,
           baseInventory: 2,
+          ratePlans: [],
         }),
-      },
-      rate: {
-        findMany: jest.fn().mockResolvedValue([
-          { date: new Date('2026-10-01T00:00:00.000Z'), basePrice: 100, otaModifier: 1 },
-          { date: new Date('2026-10-02T00:00:00.000Z'), basePrice: 100, otaModifier: 1 },
-        ]),
       },
       inventory: {
         findMany: jest.fn().mockResolvedValue([
@@ -176,7 +172,7 @@ describe('Booking API', () => {
       checkOut: new Date('2026-10-03T00:00:00.000Z'),
       status: 'CONFIRMED',
       roomType: {
-        property: { id: 'prop-1', name: 'Sea View Stays', location: 'Goa' },
+        property: { id: propertyIdOne, name: 'Sea View Stays', location: 'Goa' },
       },
     });
 
@@ -241,11 +237,8 @@ describe('Booking API', () => {
   it('creates manual booking for manager with manage_bookings permission', async () => {
     prisma.roomType.findUnique.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
-      property: { id: 'prop-1', name: 'Sea View Stays', location: 'Goa' },
-      basePrice: 100,
-      extraPersonPrice: 25,
-      baseCapacity: 2,
-      maxCapacity: 4,
+      property: { id: propertyIdOne, name: 'Sea View Stays', location: 'Goa' },
+      ratePlans: [],
     });
 
     const tx = {
@@ -274,14 +267,21 @@ describe('Booking API', () => {
     prisma.$transaction.mockImplementation(async (callback) => callback(tx));
 
     const res = await request(app)
-      .post('/api/bookings/manual')
+      .post('/api/bookings')
       .set('Authorization', `Bearer ${managerToken}`)
       .send({
-        roomTypeId: '11111111-1111-4111-8111-111111111111',
-        startDate: '2026-10-01',
-        endDate: '2026-10-03',
+        propertyId: propertyIdOne,
         guestName: 'Manual Guest',
-        guestsCount: 3,
+        guestMobile: '9876543210',
+        checkIn: '2026-10-01',
+        checkOut: '2026-10-03',
+        rooms: [
+          {
+            roomTypeId: '11111111-1111-4111-8111-111111111111',
+            rooms: 1,
+            adults: 2,
+          },
+        ],
       });
 
     expect(res.statusCode).toBe(201);
@@ -292,7 +292,7 @@ describe('Booking API', () => {
     prisma.roomType.findUnique.mockResolvedValue({
       id: '11111111-1111-4111-8111-111111111111',
       property: { id: '22222222-2222-4222-8222-222222222222', name: 'Sea View Stays', location: 'Goa' },
-      basePrice: 100,
+      ratePlans: [],
     });
 
     const tx = {
@@ -321,14 +321,14 @@ describe('Booking API', () => {
     prisma.$transaction.mockImplementation(async (callback) => callback(tx));
 
     const res = await request(app)
-      .post('/api/bookings/manual')
+      .post('/api/bookings')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         propertyId: '22222222-2222-4222-8222-222222222222',
         guestName: 'Fallback Guest',
         guestMobile: '9876543210',
-        checkInDate: '2026-10-01',
-        checkOutDate: '2026-10-03',
+        checkIn: '2026-10-01',
+        checkOut: '2026-10-03',
         rooms: [
           {
             roomTypeId: '11111111-1111-4111-8111-111111111111',
@@ -352,7 +352,7 @@ describe('Booking API', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           roomType: expect.objectContaining({
-            propertyId: { in: ['prop-1'] },
+            propertyId: { in: [propertyIdOne] },
           }),
         }),
       }),
@@ -362,22 +362,26 @@ describe('Booking API', () => {
   it('blocks manual booking create when manager lacks booking permission for property', async () => {
     prisma.roomType.findUnique.mockResolvedValue({
       id: '22222222-2222-4222-8222-222222222222',
-      property: { id: 'prop-2', name: 'Hill View Stay', location: 'Manali' },
-      basePrice: 120,
-      extraPersonPrice: 20,
-      baseCapacity: 2,
-      maxCapacity: 4,
+      property: { id: propertyIdTwo, name: 'Hill View Stay', location: 'Manali' },
+      ratePlans: [],
     });
 
     const res = await request(app)
-      .post('/api/bookings/manual')
+      .post('/api/bookings')
       .set('Authorization', `Bearer ${managerToken}`)
       .send({
-        roomTypeId: '22222222-2222-4222-8222-222222222222',
-        startDate: '2026-10-01',
-        endDate: '2026-10-03',
+        propertyId: propertyIdTwo,
         guestName: 'No Permission Guest',
-        guestsCount: 2,
+        guestMobile: '9876543210',
+        checkIn: '2026-10-01',
+        checkOut: '2026-10-03',
+        rooms: [
+          {
+            roomTypeId: '22222222-2222-4222-8222-222222222222',
+            rooms: 1,
+            adults: 2,
+          },
+        ],
       });
 
     expect(res.statusCode).toBe(403);
