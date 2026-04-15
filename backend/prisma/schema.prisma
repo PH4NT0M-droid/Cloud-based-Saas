@@ -189,6 +189,7 @@ model Booking {
   guestEmail String?
   gstNumber String?
   guestAddress String?
+  guestPincode String?
   guestState String?
   checkIn   DateTime
   checkOut  DateTime
@@ -197,6 +198,7 @@ model Booking {
   guestName String
   guestsCount Int          @default(1) @map("guests_count")
   subtotal   Float         @default(0)
+  includeGstInvoice Boolean @default(true)
   gstRate    Float         @default(0)
   cgst       Float         @default(0)
   sgst       Float         @default(0)

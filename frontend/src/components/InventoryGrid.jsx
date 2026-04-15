@@ -4,7 +4,7 @@ function formatDateKey(date) {
   return new Date(date).toISOString().split('T')[0];
 }
 
-function InventoryGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoomTypeId }) {
+function InventoryGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingRoomTypeId, actionButton = null }) {
   const [editing, setEditing] = useState(null);
   const [draftValue, setDraftValue] = useState('');
 
@@ -32,7 +32,18 @@ function InventoryGrid({ roomTypes, dates, dataByRoomType = {}, onSave, loadingR
           <h3 className="text-lg font-bold text-slate-900">Inventory grid</h3>
           <p className="text-sm text-slate-500">Click a cell to edit availability inline.</p>
         </div>
-        <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">Auto-save on blur</span>
+        <div className="flex items-center gap-2">
+          {actionButton?.label && actionButton?.onClick ? (
+            <button
+              type="button"
+              onClick={actionButton.onClick}
+              className="rounded-full bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
+            >
+              {actionButton.label}
+            </button>
+          ) : null}
+          <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">Auto-save on blur</span>
+        </div>
       </div>
 
       <div className="overflow-auto">

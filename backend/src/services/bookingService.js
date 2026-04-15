@@ -230,6 +230,13 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
   const bookingRooms = [];
   let totalRooms = 0;
   let aggregatedGuestCount = 0;
+  const includeGstInvoice = payload.includeGstInvoice !== undefined
+    ? Boolean(payload.includeGstInvoice)
+    : payload.include_gst_invoice !== undefined
+      ? Boolean(payload.include_gst_invoice)
+      : existing
+        ? Number(existing?.gstRate || existing?.cgst || existing?.sgst || existing?.igst || 0) > 0
+        : true;
 
   for (const row of roomsInput) {
     if (!row.roomTypeId) {
@@ -281,7 +288,8 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
       throw new ApiError(400, 'Price per night must be a valid non-negative value');
     }
 
-    const totalCost = round2(pricePerNight * rooms * nights);
+    const extraBedPrice = Number(ratePlan?.extraBedPrice || 0);
+    const totalCost = round2(((pricePerNight * rooms) + (extraBedPrice * extraBed)) * nights);
 
     bookingRooms.push({
       roomTypeId: roomType.id,
@@ -304,6 +312,7 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
     propertyState: property.state,
     guestState: payload.guestState || payload.guest_state,
     paidAmount: Number(payload.paidAmount ?? payload.paid_amount ?? existing?.paidAmount ?? 0),
+    includeGstInvoice,
   });
 
   if (totals.paidAmount > totals.totalAmount) {
@@ -328,9 +337,11 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
       guestEmail: payload.guestEmail || payload.guest_email || existing?.guestEmail || null,
       gstNumber: payload.gstNumber || payload.gst_number || existing?.gstNumber || null,
       guestAddress: payload.guestAddress || payload.guest_address || existing?.guestAddress || null,
+      guestPincode: payload.guestPincode || payload.guest_pincode || existing?.guestPincode || null,
       guestState: payload.guestState || payload.guest_state || existing?.guestState || null,
       guestsCount: Math.max(1, aggregatedGuestCount || Number(payload.guestsCount || existing?.guestsCount || 1)),
       subtotal: totals.subtotal,
+      includeGstInvoice,
       gstRate: totals.gstRate,
       cgst: totals.cgst,
       sgst: totals.sgst,
@@ -838,6 +849,7 @@ const getInvoicePayload = async (id, user) => {
     propertyState: property?.state,
     guestState: booking.guestState,
     paidAmount: booking.paidAmount,
+    includeGstInvoice: booking.includeGstInvoice !== undefined ? Boolean(booking.includeGstInvoice) : Number(booking.gstRate || 0) > 0,
   });
 
   return {

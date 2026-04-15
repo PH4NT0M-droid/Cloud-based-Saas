@@ -229,4 +229,90 @@ describe('bookingService unit', () => {
     );
     expect(tx.booking.update).toHaveBeenCalled();
   });
+
+  it('createBooking persists guest pincode, respects GST toggle false, and includes extra bed pricing in subtotal', async () => {
+    const tx = {
+      roomType: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'room-1',
+          propertyId: 'prop-1',
+          property: { id: 'prop-1', state: 'GOA' },
+          ratePlans: [{ id: 'plan-1', mealPlanName: 'EP', isDefault: true, extraBedPrice: 300 }],
+        }),
+      },
+      property: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'prop-1', state: 'GOA' }),
+      },
+      booking: {
+        create: jest.fn().mockResolvedValue({
+          id: 'booking-2',
+          status: 'CONFIRMED',
+          checkIn: new Date('2026-09-01T00:00:00.000Z'),
+          checkOut: new Date('2026-09-03T00:00:00.000Z'),
+        }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'booking-2', bookingRooms: [] }),
+      },
+      bookingRoom: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    pricingService.calculateTotals.mockImplementationOnce(({ rows, paidAmount, includeGstInvoice }) => {
+      expect(includeGstInvoice).toBe(false);
+      expect(rows).toHaveLength(1);
+      // (1500 * 1 + 300 * 2) * 2 nights = 4200
+      expect(rows[0].totalCost).toBe(4200);
+
+      return {
+        subtotal: 4200,
+        totalGST: 0,
+        gstRate: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        roundOff: 0,
+        totalAmount: 4200,
+        paidAmount,
+        dueAmount: 4200 - paidAmount,
+      };
+    });
+
+    await bookingService.createBooking(
+      {
+        propertyId: 'prop-1',
+        guestName: 'Guest B',
+        guestMobile: '9999999999',
+        guestPincode: '403001',
+        includeGstInvoice: false,
+        checkIn: '2026-09-01',
+        checkOut: '2026-09-03',
+        paidAmount: 200,
+        rooms: [
+          {
+            roomTypeId: 'room-1',
+            ratePlanId: 'plan-1',
+            rooms: 1,
+            adults: 2,
+            extraBed: 2,
+          },
+        ],
+      },
+      user,
+    );
+
+    expect(tx.booking.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          guestPincode: '403001',
+          includeGstInvoice: false,
+          subtotal: 4200,
+          totalAmount: 4200,
+          dueAmount: 4000,
+        }),
+      }),
+    );
+  });
 });

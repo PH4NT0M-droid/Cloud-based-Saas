@@ -387,4 +387,30 @@ describe('Booking API', () => {
     expect(res.statusCode).toBe(403);
     expect(res.body.success).toBe(false);
   });
+
+  it('rejects manual booking create with invalid guest pincode', async () => {
+    const res = await request(app)
+      .post('/api/bookings')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        propertyId: propertyIdOne,
+        guestName: 'Pincode Guest',
+        guestMobile: '9876543210',
+        guestPincode: '40A001',
+        checkIn: '2026-10-01',
+        checkOut: '2026-10-03',
+        rooms: [
+          {
+            roomTypeId: '11111111-1111-4111-8111-111111111111',
+            rooms: 1,
+            adults: 2,
+          },
+        ],
+      });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(Array.isArray(res.body.errors)).toBe(true);
+    expect(res.body.errors.some((error) => /guestPincode/i.test(String(error.message || '')))).toBe(true);
+  });
 });

@@ -80,15 +80,15 @@ const getGstRateFromRows = (rows = []) => {
   }, 0);
 };
 
-const buildRowTaxSummary = (row) => {
+const buildRowTaxSummary = (row, includeGstInvoice = true) => {
   const rooms = Number(row.rooms || 0);
   const nights = Number(row.nights || 0);
   const pricePerNight = Number(row.pricePerNight || 0);
   const rowSubtotal = row.totalCost !== undefined && row.totalCost !== null
     ? Number(row.totalCost || 0)
     : pricePerNight * rooms * nights;
-  const gstRate = getGstRateFromNightlyPrice(pricePerNight);
-  const rowGST = rowSubtotal * (gstRate / 100);
+  const gstRate = includeGstInvoice ? getGstRateFromNightlyPrice(pricePerNight) : 0;
+  const rowGST = includeGstInvoice ? rowSubtotal * (gstRate / 100) : 0;
 
   return {
     ...row,
@@ -102,12 +102,12 @@ const buildRowTaxSummary = (row) => {
   };
 };
 
-const calculateTotals = ({ rows = [], propertyState, guestState, paidAmount = 0, gstRate: gstRateInput = null }) => {
-  const taxRows = rows.map(buildRowTaxSummary);
+const calculateTotals = ({ rows = [], propertyState, guestState, paidAmount = 0, gstRate: gstRateInput = null, includeGstInvoice = true }) => {
+  const taxRows = rows.map((row) => buildRowTaxSummary(row, includeGstInvoice));
   const subtotal = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowSubtotal || 0), 0));
   const totalGST = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
   const effectiveGstRate = subtotal > 0 ? toTwoDecimals((totalGST / subtotal) * 100) : 0;
-  const isIntraState = normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
+  const isIntraState = includeGstInvoice && normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
 
   const cgst = isIntraState ? toTwoDecimals(totalGST / 2) : 0;
   const sgst = isIntraState ? toTwoDecimals(totalGST / 2) : 0;

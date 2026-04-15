@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { formatCurrency } from '../utils/format';
 
-function PricingGrid({ roomTypes, dates, dataByRoomPlan = {}, onSave, loadingRowKey }) {
+function PricingGrid({ roomTypes, dates, dataByRoomPlan = {}, onSave, loadingRowKey, actionButton = null }) {
   const [editing, setEditing] = useState(null);
   const [draftValue, setDraftValue] = useState('');
 
@@ -35,7 +35,18 @@ function PricingGrid({ roomTypes, dates, dataByRoomPlan = {}, onSave, loadingRow
           <h3 className="text-lg font-bold text-slate-900">Pricing grid</h3>
           <p className="text-sm text-slate-500">Date-wise pricing per room and meal plan.</p>
         </div>
-        <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-700">Room + plan rows</span>
+        <div className="flex items-center gap-2">
+          {actionButton?.label && actionButton?.onClick ? (
+            <button
+              type="button"
+              onClick={actionButton.onClick}
+              className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              {actionButton.label}
+            </button>
+          ) : null}
+          <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-700">Room + plan rows</span>
+        </div>
       </div>
 
       <div className="overflow-auto">

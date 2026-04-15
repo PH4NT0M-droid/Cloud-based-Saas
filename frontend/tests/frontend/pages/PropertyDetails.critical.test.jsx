@@ -75,22 +75,24 @@ vi.mock('../../../src/components/Modal', () => ({
 }));
 
 vi.mock('../../../src/components/InventoryGrid', () => ({
-  default: ({ roomTypes, dates, onSave }) => (
+  default: ({ roomTypes, dates, onSave, actionButton }) => (
     <section>
       <p>Inventory grid mocked</p>
       <p>inventory-room-count:{roomTypes.length}</p>
       <p>inventory-date-count:{dates.length}</p>
+      {actionButton?.label ? <button onClick={actionButton.onClick}>{actionButton.label}</button> : null}
       <button onClick={() => onSave({ roomTypeId: 'room-1', date: dates[0], availableRooms: 5 })}>save inventory cell</button>
     </section>
   ),
 }));
 
 vi.mock('../../../src/components/PricingGrid', () => ({
-  default: ({ roomTypes, dates, onSave }) => (
+  default: ({ roomTypes, dates, onSave, actionButton }) => (
     <section>
       <p>Pricing grid mocked</p>
       <p>pricing-room-count:{roomTypes.length}</p>
       <p>pricing-date-count:{dates.length}</p>
+      {actionButton?.label ? <button onClick={actionButton.onClick}>{actionButton.label}</button> : null}
       <button onClick={() => onSave({ roomTypeId: 'room-1', ratePlanId: 'plan-1', date: dates[0], price: 1500 })}>save pricing cell</button>
     </section>
   ),
@@ -137,7 +139,7 @@ describe('PropertyDetails critical flows', () => {
     });
   });
 
-  it('bulk update modal toggles meal-plan field by mode and sends ALL plan payload', async () => {
+  it('bulk price update modal sends ALL plan payload', async () => {
     render(
       <MemoryRouter>
         <PropertyDetails />
@@ -145,29 +147,21 @@ describe('PropertyDetails critical flows', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /bulk update/i })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /bulk price update/i })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getAllByRole('button', { name: /bulk update/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /bulk price update/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Bulk update rates or inventory')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: /bulk price update/i })).toBeTruthy();
       expect(screen.getByText('Meal plan')).toBeTruthy();
     });
 
-    const typeSelect = screen.getByDisplayValue('Price');
-    fireEvent.change(typeSelect, { target: { value: 'inventory' } });
-
-    await waitFor(() => {
-      expect(screen.queryByText('Meal plan')).toBeNull();
-    });
-
-    fireEvent.change(typeSelect, { target: { value: 'price' } });
     fireEvent.change(screen.getByLabelText('Room type'), { target: { value: 'room-1' } });
     fireEvent.change(screen.getByLabelText('Meal plan'), { target: { value: 'ALL' } });
     fireEvent.change(screen.getByLabelText('Value'), { target: { value: '2500' } });
 
-    fireEvent.click(screen.getByRole('button', { name: /apply bulk update/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apply price update/i }));
 
     await waitFor(() => {
       expect(roomServiceMocks.bulkUpdate).toHaveBeenCalledWith(

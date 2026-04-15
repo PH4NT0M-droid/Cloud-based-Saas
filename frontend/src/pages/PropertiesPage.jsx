@@ -123,7 +123,7 @@ function PropertiesPage() {
         ))}
       </div>
 
-      <Modal open={open} title="Create property" onClose={() => setOpen(false)} panelClassName="max-w-4xl">
+      <Modal open={open} title="Create property" onClose={() => setOpen(false)} panelClassName="max-w-6xl">
         <PropertyForm initialData={{}} onSubmit={submit} isSubmitting={creating} />
       </Modal>
     </div>

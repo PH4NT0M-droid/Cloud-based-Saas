@@ -43,6 +43,7 @@ function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting 
   const [form, setForm] = useState(buildInitialForm(initialData));
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState('');
+  const [logoPreviewFailed, setLogoPreviewFailed] = useState(false);
   const [errors, setErrors] = useState({});
   const [pinCodeLookupState, setPinCodeLookupState] = useState('idle');
   const [pinCodeLookupMessage, setPinCodeLookupMessage] = useState('');
@@ -51,6 +52,7 @@ function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting 
     setForm(buildInitialForm(initialData));
     setLogoFile(null);
     setLogoPreview(resolveLogoPreview(initialData?.propertyLogo));
+    setLogoPreviewFailed(false);
     setErrors({});
     setPinCodeLookupState('idle');
     setPinCodeLookupMessage('');
@@ -72,7 +74,17 @@ function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting 
       return;
     }
 
+    if (!String(file.type || '').startsWith('image/')) {
+      setLogoFile(null);
+      setLogoPreview('');
+      setLogoPreviewFailed(true);
+      setErrors((current) => ({ ...current, propertyLogo: 'Please upload a valid image file.' }));
+      return;
+    }
+
     setLogoFile(file);
+    setLogoPreviewFailed(false);
+    setErrors((current) => ({ ...current, propertyLogo: undefined }));
     setLogoPreview(URL.createObjectURL(file));
   };
 
@@ -307,9 +319,21 @@ function PropertyForm({ initialData, onSubmit, isEditMode = false, isSubmitting 
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         </label>
-        {logoPreview ? (
-          <img src={logoPreview} alt="Property Logo" className="h-20 w-20 rounded-xl border border-slate-200 object-cover" />
-        ) : null}
+        {errors.propertyLogo ? <p className="text-xs font-medium text-red-600">{errors.propertyLogo}</p> : null}
+        <div className="h-28 w-40 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          {logoPreview && !logoPreviewFailed ? (
+            <img
+              src={logoPreview}
+              alt="Property Logo"
+              onError={() => setLogoPreviewFailed(true)}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center px-3 text-center text-xs font-medium text-slate-500">
+              {logoPreviewFailed ? 'Unable to preview this image.' : 'Logo preview will appear here.'}
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="space-y-3 rounded-2xl border border-slate-200 p-4">

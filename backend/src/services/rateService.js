@@ -88,19 +88,21 @@ const seedMissingRoomPricing = async ({ tx, roomType, startDate, endDate }) => {
   });
 
   const existingSet = new Set(existing.map((item) => `${item.ratePlanId}:${formatDateKey(item.date)}`));
-  const legacyRates = await tx.rate.findMany({
-    where: {
-      roomTypeId: roomType.id,
-      date: {
-        gte: startDate,
-        lte: endDate,
+  const legacyRates = tx?.rate?.findMany
+    ? await tx.rate.findMany({
+      where: {
+        roomTypeId: roomType.id,
+        date: {
+          gte: startDate,
+          lte: endDate,
+        },
       },
-    },
-    select: {
-      date: true,
-      basePrice: true,
-    },
-  });
+      select: {
+        date: true,
+        basePrice: true,
+      },
+    })
+    : [];
 
   const legacyRateByDate = legacyRates.reduce((acc, item) => {
     acc[formatDateKey(item.date)] = Number(item.basePrice ?? roomType.basePrice ?? 0);

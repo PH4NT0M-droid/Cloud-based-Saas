@@ -11,9 +11,10 @@ import TextInput from '../components/forms/TextInput';
 import { useToast } from '../components/ToastProvider';
 import { canManageBookings as canManageBookingsPermission } from '../utils/permissions';
 
-const ROOM_TABLE_COLUMNS = ['Room Type', 'Meal Plan', 'Rooms', 'Adults', 'Extra Bed', 'Children', 'Price / Night', 'Total'];
+const ROOM_TABLE_COLUMNS = ['Room Type', 'Meal Plan', 'Rooms', 'Adults', 'Extra Bed', 'Price / Night', 'Total'];
 
 const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const formatCurrency2 = (value) => `₹${Number(value || 0).toFixed(2)}`;
 
 const normalizeState = (value) => String(value || '').trim().toUpperCase();
 
@@ -69,7 +70,6 @@ const createEmptyRow = () => ({
   rooms: 1,
   adults: 1,
   extraBed: 0,
-  children: 0,
   pricePerNight: 0,
   manualPrice: false,
   totalCost: 0,
@@ -86,11 +86,12 @@ const getGstRateFromRowPrice = (pricePerNight) => {
   return 18;
 };
 
-const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount }) => {
+const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount, includeGstInvoice }) => {
+  const shouldApplyGst = Boolean(includeGstInvoice);
   const taxRows = rows.map((row) => {
     const rowSubtotal = Number(row.totalCost || 0);
-    const gstRate = getGstRateFromRowPrice(row.pricePerNight);
-    const rowGST = rowSubtotal * (gstRate / 100);
+    const gstRate = shouldApplyGst ? getGstRateFromRowPrice(row.pricePerNight) : 0;
+    const rowGST = shouldApplyGst ? rowSubtotal * (gstRate / 100) : 0;
     return {
       ...row,
       rowSubtotal,
@@ -104,7 +105,7 @@ const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount 
   const totalGST = round2(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
   const gstRate = subtotal > 0 ? round2((totalGST / subtotal) * 100) : 0;
 
-  const isIntraState = normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
+  const isIntraState = shouldApplyGst && normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
   const cgst = isIntraState ? round2(totalGST / 2) : 0;
   const sgst = isIntraState ? round2(totalGST / 2) : 0;
   const igst = isIntraState ? 0 : totalGST;
@@ -130,6 +131,30 @@ const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount 
     paidAmount: paid,
     dueAmount,
   };
+};
+
+const parseCurrencyAmount = (value) => {
+  const numeric = Number(String(value || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const normalizeInvoicePreviewHtml = (html) => {
+  if (!html) {
+    return '';
+  }
+
+  let normalized = String(html);
+  normalized = normalized.replace(/INR\s*([0-9,]+(?:\.[0-9]+)?)/g, (_, amount) => formatCurrency2(parseCurrencyAmount(amount)));
+
+  ['CGST', 'SGST', 'IGST'].forEach((label) => {
+    const rowRegex = new RegExp(`<tr><td>${label}<\\/td><td>([^<]+)<\\/td><\\/tr>`, 'i');
+    const match = normalized.match(rowRegex);
+    if (match && parseCurrencyAmount(match[1]) <= 0) {
+      normalized = normalized.replace(match[0], '');
+    }
+  });
+
+  return normalized;
 };
 
 function BookingsPage() {
@@ -164,6 +189,7 @@ function BookingsPage() {
     paymentReference: '',
     specialNote: '',
     paidAmount: 0,
+    includeGstInvoice: true,
     rooms: [createEmptyRow()],
   });
 
@@ -220,7 +246,12 @@ function BookingsPage() {
         computedNightly = collected.length > 0 ? round2(sum / collected.length) : computedNightly;
       }
 
-      const totalCost = round2(computedNightly * Number(row.rooms || 0) * nights);
+      const roomsCount = Number(row.rooms || 0);
+      const extraBedCount = Number(row.extraBed || 0);
+      const extraBedPrice = Number(ratePlan?.extraBedPrice || 0);
+      const roomNightlySubtotal = computedNightly * roomsCount;
+      const extraBedNightlySubtotal = extraBedPrice * extraBedCount;
+      const totalCost = round2((roomNightlySubtotal + extraBedNightlySubtotal) * nights);
 
       return {
         ...row,
@@ -228,6 +259,7 @@ function BookingsPage() {
         ratePlan,
         ratePlanId: effectiveRatePlanId,
         pricePerNight: computedNightly,
+        extraBedPrice,
         totalCost,
       };
     });
@@ -241,8 +273,9 @@ function BookingsPage() {
         guestState: form.guestState,
         nights,
         paidAmount: form.paidAmount,
+        includeGstInvoice: form.includeGstInvoice,
       }),
-    [pricedRows, selectedProperty, form.guestState, form.paidAmount, nights],
+    [pricedRows, selectedProperty, form.guestState, form.paidAmount, form.includeGstInvoice, nights],
   );
 
   const loadBookings = async () => {
@@ -340,6 +373,7 @@ function BookingsPage() {
       paymentReference: '',
       specialNote: '',
       paidAmount: 0,
+      includeGstInvoice: true,
       rooms: [createEmptyRow()],
     });
   };
@@ -394,7 +428,6 @@ function BookingsPage() {
               rooms: 1,
               adults: booking.guestsCount || 1,
               extraBed: 0,
-              children: 0,
               pricePerNight: booking.nights > 0 ? round2((booking.subtotal || booking.totalAmount || 0) / booking.nights) : 0,
             },
           ];
@@ -407,20 +440,22 @@ function BookingsPage() {
         guestEmail: booking.guestEmail || '',
         gstNumber: booking.gstNumber || '',
         guestAddress: booking.guestAddress || '',
-        guestPincode: '',
+        guestPincode: booking.guestPincode || '',
         guestState: booking.guestState || '',
         checkIn: toDateInputValue(booking.checkIn),
         checkOut: toDateInputValue(booking.checkOut),
         paymentReference: booking.paymentReference || '',
         specialNote: booking.specialNote || '',
         paidAmount: Number(booking.paidAmount || 0),
+        includeGstInvoice: booking.includeGstInvoice !== undefined
+          ? Boolean(booking.includeGstInvoice)
+          : Number(booking.totalGST || booking.cgst || booking.sgst || booking.igst || 0) > 0,
         rooms: rows.map((row) => ({
           roomTypeId: row.roomTypeId,
           ratePlanId: row.ratePlanId || '',
           rooms: Number(row.rooms || 1),
           adults: Number(row.adults || 0),
           extraBed: Number(row.extraBed || 0),
-          children: Number(row.children || 0),
           pricePerNight: Number(row.pricePerNight || 0),
           manualPrice: true,
           totalCost: Number(row.totalCost || 0),
@@ -474,11 +509,13 @@ function BookingsPage() {
       guestEmail: form.guestEmail || undefined,
       gstNumber: form.gstNumber || undefined,
       guestAddress: form.guestAddress || undefined,
+      guestPincode: form.guestPincode || undefined,
       guestState: form.guestState || undefined,
       checkInDate: form.checkIn,
       checkOutDate: form.checkOut,
       paymentReference: form.paymentReference || undefined,
       specialNote: form.specialNote || undefined,
+      includeGstInvoice: Boolean(form.includeGstInvoice),
       paidAmount: summary.paidAmount,
       rooms: pricedRows.map((row) => ({
         roomTypeId: row.roomTypeId,
@@ -486,7 +523,6 @@ function BookingsPage() {
         rooms: Number(row.rooms),
         adults: Number(row.adults),
         extraBed: Number(row.extraBed),
-        children: Number(row.children),
         pricePerNight: Number(row.pricePerNight),
       })),
       summary,
@@ -531,7 +567,7 @@ function BookingsPage() {
     try {
       setBusy(true);
       const response = await bookingService.previewInvoice(bookingId);
-      setInvoiceHtml(response.html || '');
+      setInvoiceHtml(normalizeInvoicePreviewHtml(response.html || ''));
       setInvoiceModalOpen(true);
     } catch (previewError) {
       pushToast({ type: 'error', title: 'Preview failed', message: previewError.response?.data?.message || previewError.message });
@@ -677,7 +713,7 @@ function BookingsPage() {
         </table>
       </div>
 
-      <Modal open={bookingModalOpen} title={editingBookingId ? 'Edit Booking' : 'Create Booking'} onClose={() => setBookingModalOpen(false)} panelClassName="max-w-6xl">
+      <Modal open={bookingModalOpen} title={editingBookingId ? 'Edit Booking' : 'Create Booking'} onClose={() => setBookingModalOpen(false)} panelClassName="max-w-7xl">
         <form className="space-y-5" onSubmit={submitBooking}>
           <section className="rounded-2xl border border-slate-200 p-4">
             <p className="mb-3 text-sm font-semibold text-slate-800">Section 1: Property</p>
@@ -729,6 +765,15 @@ function BookingsPage() {
               <TextInput label="Special Note" value={form.specialNote} onChange={(event) => setForm((current) => ({ ...current, specialNote: event.target.value }))} />
               <TextInput label="Paid Amount" type="number" min="0" step="0.01" value={String(form.paidAmount)} onChange={(event) => setForm((current) => ({ ...current, paidAmount: Number(event.target.value || 0) }))} />
             </div>
+            <label className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={Boolean(form.includeGstInvoice)}
+                onChange={(event) => setForm((current) => ({ ...current, includeGstInvoice: event.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-200"
+              />
+              Include GST Invoice
+            </label>
           </section>
 
           <section className="rounded-2xl border border-slate-200 p-4">
@@ -790,9 +835,6 @@ function BookingsPage() {
                           <input type="number" min="0" value={row.extraBed} onChange={(event) => updateRow(index, { extraBed: Number(event.target.value || 0) })} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5" />
                         </td>
                         <td className="px-3 py-2">
-                          <input type="number" min="0" value={row.children} onChange={(event) => updateRow(index, { children: Number(event.target.value || 0) })} className="w-24 rounded-lg border border-slate-200 px-2 py-1.5" />
-                        </td>
-                        <td className="px-3 py-2">
                           <input
                             type="number"
                             min="0"
@@ -816,15 +858,17 @@ function BookingsPage() {
 
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <p className="mb-3 text-sm font-semibold text-slate-800">Pricing Breakdown</p>
-            <div className="grid gap-2 md:grid-cols-2">
-              <p>Subtotal: <strong>{formatCurrency(summary.subtotal)}</strong></p>
+            <div className="grid gap-2 md:grid-cols-4">
+              <p>Subtotal: <strong>{formatCurrency2(summary.subtotal)}</strong></p>
               <p>GST Rate: <strong>{summary.gstRate}%</strong></p>
-              <p>CGST: <strong>{formatCurrency(summary.cgst)}</strong></p>
-              <p>SGST: <strong>{formatCurrency(summary.sgst)}</strong></p>
-              <p>IGST: <strong>{formatCurrency(summary.igst)}</strong></p>
-              <p>Round Off (₹1): <strong>{formatCurrency(summary.roundOff)}</strong></p>
-              <p>Total Amount: <strong>{formatCurrency(summary.totalAmount)}</strong></p>
-              <p>Due Amount: <strong>{formatCurrency(summary.dueAmount)}</strong></p>
+              <p>Total Amount: <strong>{formatCurrency2(summary.totalAmount)}</strong></p>
+              <p>Due Amount: <strong>{formatCurrency2(summary.dueAmount)}</strong></p>
+            </div>
+            <div className="mt-2 grid gap-2 md:grid-cols-4">
+              <p>Round Off: <strong>{formatCurrency2(summary.roundOff)}</strong></p>
+              {summary.cgst > 0 ? <p>CGST: <strong>{formatCurrency2(summary.cgst)}</strong></p> : null}
+              {summary.sgst > 0 ? <p>SGST: <strong>{formatCurrency2(summary.sgst)}</strong></p> : null}
+              {summary.igst > 0 ? <p>IGST: <strong>{formatCurrency2(summary.igst)}</strong></p> : null}
             </div>
           </section>
 

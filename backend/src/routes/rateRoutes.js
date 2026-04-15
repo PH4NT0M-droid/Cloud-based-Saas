@@ -16,6 +16,7 @@ router.post(
   validateRequest,
   rateController.bulkUpdateRates,
 );
+router.get('/grid', authorizeRoles('ADMIN', 'MANAGER', 'STAFF'), getRatesValidator, validateRequest, rateController.getPricingGrid);
 router.get('/', authorizeRoles('ADMIN', 'MANAGER', 'STAFF'), getRatesValidator, validateRequest, rateController.getRates);
 
 module.exports = router;
