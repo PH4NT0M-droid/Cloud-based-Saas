@@ -80,21 +80,26 @@ const getGstRateFromRows = (rows = []) => {
   }, 0);
 };
 
-const buildRowTaxSummary = (row, includeGstInvoice = true) => {
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const buildRowTaxSummary = (row, includeGstInvoice = true, priceMultiplier = 1) => {
   const rooms = Number(row.rooms || 0);
   const nights = Number(row.nights || 0);
   const pricePerNight = Number(row.pricePerNight || 0);
-  const rowSubtotal = row.totalCost !== undefined && row.totalCost !== null
+  const normalizedMultiplier = Number(priceMultiplier || 0) > 0 ? Number(priceMultiplier) : 0;
+  const rowSubtotalRaw = row.totalCost !== undefined && row.totalCost !== null
     ? Number(row.totalCost || 0)
     : pricePerNight * rooms * nights;
-  const gstRate = includeGstInvoice ? getGstRateFromNightlyPrice(pricePerNight) : 0;
+  const adjustedPricePerNight = pricePerNight * normalizedMultiplier;
+  const rowSubtotal = rowSubtotalRaw * normalizedMultiplier;
+  const gstRate = includeGstInvoice ? getGstRateFromNightlyPrice(adjustedPricePerNight) : 0;
   const rowGST = includeGstInvoice ? rowSubtotal * (gstRate / 100) : 0;
 
   return {
     ...row,
     rooms,
     nights,
-    pricePerNight: toTwoDecimals(pricePerNight),
+    pricePerNight: toTwoDecimals(adjustedPricePerNight),
     rowSubtotal: toTwoDecimals(rowSubtotal),
     gstRate,
     rowGST,
@@ -102,16 +107,41 @@ const buildRowTaxSummary = (row, includeGstInvoice = true) => {
   };
 };
 
-const calculateTotals = ({ rows = [], propertyState, guestState, paidAmount = 0, gstRate: gstRateInput = null, includeGstInvoice = true }) => {
-  const taxRows = rows.map((row) => buildRowTaxSummary(row, includeGstInvoice));
+const calculateTotals = ({
+  rows = [],
+  propertyState,
+  guestState,
+  paidAmount = 0,
+  gstRate: gstRateInput = null,
+  includeGstInvoice = true,
+  discountPercent = 0,
+  discountAmount: discountAmountInput = null,
+}) => {
+  const baseRows = rows.map((row) => buildRowTaxSummary(row, includeGstInvoice, 1));
+  const rawSubtotal = toTwoDecimals(baseRows.reduce((sum, row) => sum + Number(row.rowSubtotal || 0), 0));
+  const normalizedDiscountPercent = clamp(Number(discountPercent || 0), 0, 100);
+  const requestedDiscountAmount =
+    discountAmountInput === null || discountAmountInput === undefined ? null : Number(discountAmountInput || 0);
+  const discountAmount = toTwoDecimals(
+    clamp(
+      requestedDiscountAmount === null ? (rawSubtotal * normalizedDiscountPercent) / 100 : requestedDiscountAmount,
+      0,
+      rawSubtotal,
+    ),
+  );
+  const subtotalAfterDiscount = toTwoDecimals(Math.max(0, rawSubtotal - discountAmount));
+  const discountMultiplier = rawSubtotal > 0 ? subtotalAfterDiscount / rawSubtotal : 1;
+
+  const taxRows = rows.map((row) => buildRowTaxSummary(row, includeGstInvoice, discountMultiplier));
   const subtotal = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowSubtotal || 0), 0));
-  const totalGST = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
-  const effectiveGstRate = subtotal > 0 ? toTwoDecimals((totalGST / subtotal) * 100) : 0;
+  const totalGSTRaw = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
   const isIntraState = includeGstInvoice && normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
 
-  const cgst = isIntraState ? toTwoDecimals(totalGST / 2) : 0;
-  const sgst = isIntraState ? toTwoDecimals(totalGST / 2) : 0;
-  const igst = isIntraState ? 0 : totalGST;
+  const cgst = isIntraState ? toTwoDecimals(totalGSTRaw / 2) : 0;
+  const sgst = isIntraState ? toTwoDecimals(totalGSTRaw / 2) : 0;
+  const igst = isIntraState ? 0 : toTwoDecimals(totalGSTRaw);
+  const totalGST = toTwoDecimals(cgst + sgst + igst);
+  const effectiveGstRate = subtotal > 0 ? toTwoDecimals((totalGST / subtotal) * 100) : 0;
 
   const exactTotal = subtotal + totalGST;
   const totalAmount = Math.round(exactTotal);
@@ -121,6 +151,9 @@ const calculateTotals = ({ rows = [], propertyState, guestState, paidAmount = 0,
 
   return {
     subtotal,
+    rawSubtotal,
+    discountPercent: normalizedDiscountPercent,
+    discountAmount,
     totalGST,
     gstRate: gstRateInput === null || gstRateInput === undefined ? effectiveGstRate : Number(gstRateInput || 0),
     cgst,

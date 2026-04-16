@@ -31,27 +31,44 @@ const escapeHtml = (value) =>
 const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} }) => {
   const taxRows = Array.isArray(taxSummary.rows) && taxSummary.rows.length > 0 ? taxSummary.rows : [];
   const rows = (taxRows.length > 0 ? taxRows : (bookingRooms || []))
-    .map(
-      (row, index) => `
+    .map((row, index) => {
+      const adults = Number(row.adults || 0);
+      const extraBed = Number(row.extraBed || 0);
+      const children = Number(row.children || 0);
+      const infant = Number(row.infant || 0);
+      const extraBedPrice = Number(row.extraBedPrice || row.ratePlan?.extraBedPrice || 0);
+      const childPrice = Number(row.childPrice || row.ratePlan?.childPrice || 0);
+      const nights = Number(row.nights || booking.nights || 0);
+      const rooms = Number(row.rooms || 1);
+      const adultCost = Number(row.adultCost ?? (Number(row.pricePerNight || 0) * rooms * nights));
+      const extraBedCost = Number(row.extraBedCost ?? (extraBed * extraBedPrice * nights));
+      const childCost = Number(row.childCost ?? (children * childPrice * nights));
+      const netCost = Number(row.rowSubtotal ?? row.totalCost ?? adultCost + extraBedCost + childCost);
+      const gst = Number(row.rowGST ?? 0);
+      const total = Number(row.rowTotal ?? netCost + gst);
+
+      return `
       <tr>
         <td>${index + 1}</td>
         <td>${escapeHtml(row.roomType?.name || '-')}</td>
+        <td>${adults}+${extraBed}</td>
+        <td>${children}+${infant}</td>
         <td>${escapeHtml(row.ratePlan?.mealPlanName || '-')}</td>
-        <td>${row.rooms}</td>
-        <td>${formatCurrency(row.pricePerNight)}</td>
-        <td>${formatCurrency(row.rowSubtotal ?? row.totalCost)}</td>
-        <td>${Number(row.gstRate || 0)}%</td>
-        <td>${formatCurrency(row.rowGST ?? 0)}</td>
-        <td>${formatCurrency(row.rowTotal ?? row.totalCost)}</td>
-      </tr>`,
-    )
+        <td>${adultCost.toFixed(2)}</td>
+        <td>${extraBedCost.toFixed(2)}</td>
+        <td>${childCost.toFixed(2)}</td>
+        <td>${netCost.toFixed(2)}</td>
+        <td>${gst.toFixed(2)}</td>
+        <td>${total.toFixed(2)}</td>
+      </tr>`;
+    })
     .join('');
 
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Invoice ${escapeHtml(booking.id)}</title>
+  <title>Booking Confirmation ${escapeHtml(booking.id)}</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 24px; color: #1e293b; }
     .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; }
@@ -68,11 +85,11 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
 <body>
   <div class="header">
     <div>
-      <h2 style="margin:0;">Tax Invoice</h2>
+      <h2 style="margin:0;">Booking Confirmation</h2>
       <div>Booking ID: ${escapeHtml(booking.id)}</div>
       <div>Booking Date: ${formatDateOnly(booking.createdAt)}</div>
-      <div>Source: Direct</div>
-      <div>Source Type: Manual</div>
+      <div>Booking Source: ${escapeHtml(booking.otaSource || booking.source || 'Direct')}</div>
+      <div>Source Type: ${escapeHtml(booking.sourceType || 'Manual')}</div>
     </div>
     <div>
       <h3 style="margin:0;">${escapeHtml(property?.name || 'Property')}</h3>
@@ -85,7 +102,7 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
 
   <div class="section card">
     <strong>Dear ${escapeHtml(booking.guestName)}</strong>
-    <div>Thank you for choosing us. Please find your booking invoice below.</div>
+    <div>Thank you for making a reservation with us. Please find your booking confirmation details below.</div>
   </div>
 
   <div class="section" style="display:flex; gap:12px;">
@@ -114,14 +131,16 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
     <table>
       <thead>
         <tr>
-          <th>#</th>
-          <th>Room Type</th>
+          <th>SR No</th>
+          <th>Room Category</th>
+          <th>Adult+E Bed</th>
+          <th>Child+Infant</th>
           <th>Meal Plan</th>
-          <th>Rooms</th>
-          <th>Price/Night</th>
-          <th>Subtotal</th>
-          <th>GST %</th>
-          <th>GST Amt</th>
+          <th>Adult Cost</th>
+          <th>E Bed Cost</th>
+          <th>Child Cost</th>
+          <th>Net Cost</th>
+          <th>GST</th>
           <th>Total</th>
         </tr>
       </thead>
@@ -132,22 +151,20 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
   </div>
 
   <div class="section summary">
-    <table>
-      <tbody>
-        <tr><td>Net Cost</td><td>${formatCurrency(booking.subtotal)}</td></tr>
-        <tr><td>Total GST</td><td>${formatCurrency(taxSummary.totalGST)}</td></tr>
-        <tr><td>CGST</td><td>${formatCurrency(booking.cgst)}</td></tr>
-        <tr><td>SGST</td><td>${formatCurrency(booking.sgst)}</td></tr>
-        <tr><td>IGST</td><td>${formatCurrency(booking.igst)}</td></tr>
-        <tr><td>Round Off</td><td>${formatCurrency(booking.roundOff)}</td></tr>
-        <tr><td><strong>Payable</strong></td><td><strong>${formatCurrency(booking.totalAmount)}</strong></td></tr>
-        <tr><td>Paid</td><td>${formatCurrency(booking.paidAmount)}</td></tr>
-        <tr><td>Due</td><td>${formatCurrency(booking.dueAmount)}</td></tr>
-      </tbody>
-    </table>
+    <div>Net Cost ${Number(booking.subtotal || 0).toFixed(2)} /-</div>
+    <div>Total GST Amount (SGST: ${Number(booking.sgst || 0).toFixed(2)}) | (CGST: ${Number(booking.cgst || 0).toFixed(2)}) ${Number(taxSummary.totalGST ?? (Number(booking.cgst || 0) + Number(booking.sgst || 0) + Number(booking.igst || 0))).toFixed(2)} /-</div>
+    <div>Payable Amount ${Number(booking.totalAmount || 0).toFixed(2)} /-</div>
+    <div>Paid Amount ${Number(booking.paidAmount || 0).toFixed(2)} /-</div>
+    <div>Due Amount ${Number(booking.dueAmount || 0).toFixed(2)} /-</div>
   </div>
 
-  <div class="brand">Reservation Powered By RestoraX Solutions</div>
+  <div class="brand">
+    <div>Cancellation Policy: As per booking policy and channel terms.</div>
+    <div>Hotel: ${escapeHtml(property?.name || '-')} | GST: ${escapeHtml(property?.gstNumber || '-')}</div>
+    <div>Contact: ${escapeHtml(property?.mobileNumber || property?.landlineNumber || '-')} | Check-in: 12:00 PM | Check-out: 11:00 AM</div>
+    ${booking.status === 'CANCELLED' ? '<div><strong>*** THIS BOOKING IS CANCELLED ***</strong></div>' : ''}
+    <div>This is computer generated and does not require a signature.</div>
+  </div>
 </body>
 </html>`;
 };

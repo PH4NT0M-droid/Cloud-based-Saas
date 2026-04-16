@@ -24,8 +24,15 @@ vi.mock('../../../src/services/bookingService', () => ({
     create: vi.fn().mockResolvedValue({ id: 'booking-2' }),
     update: vi.fn().mockResolvedValue({ id: 'booking-1' }),
     cancel: vi.fn().mockResolvedValue({ id: 'booking-1', status: 'CANCELLED' }),
+    remove: vi.fn().mockResolvedValue({ id: 'booking-1' }),
     previewInvoice: vi.fn().mockResolvedValue({ html: '<h1>Invoice</h1>' }),
     downloadInvoice: vi.fn().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' })),
+  },
+}));
+
+vi.mock('../../../src/services/promotionService', () => ({
+  default: {
+    getAll: vi.fn().mockResolvedValue([]),
   },
 }));
 

@@ -59,6 +59,8 @@ const createRoomValidator = [
   body('maxCapacity').optional().isInt({ min: 1, max: 20 }).withMessage('maxCapacity must be an integer between 1 and 20'),
   body('base_inventory').optional().isInt({ min: 0 }).withMessage('base_inventory must be an integer greater than or equal to 0'),
   body('baseInventory').optional().isInt({ min: 0 }).withMessage('baseInventory must be an integer greater than or equal to 0'),
+  body('room_inventory').optional().isInt({ min: 0 }).withMessage('room_inventory must be an integer greater than or equal to 0'),
+  body('roomInventory').optional().isInt({ min: 0 }).withMessage('roomInventory must be an integer greater than or equal to 0'),
   body('maxOccupancy').optional().isInt({ min: 1, max: 20 }).withMessage('maxOccupancy must be an integer between 1 and 20'),
   ratePlanShapeValidator,
   body().custom((value) => {
@@ -90,6 +92,8 @@ const updateRoomValidator = [
   body('maxCapacity').optional().isInt({ min: 1, max: 20 }).withMessage('maxCapacity must be an integer between 1 and 20'),
   body('base_inventory').optional().isInt({ min: 0 }).withMessage('base_inventory must be an integer greater than or equal to 0'),
   body('baseInventory').optional().isInt({ min: 0 }).withMessage('baseInventory must be an integer greater than or equal to 0'),
+  body('room_inventory').optional().isInt({ min: 0 }).withMessage('room_inventory must be an integer greater than or equal to 0'),
+  body('roomInventory').optional().isInt({ min: 0 }).withMessage('roomInventory must be an integer greater than or equal to 0'),
   body('maxOccupancy').optional().isInt({ min: 1, max: 20 }).withMessage('maxOccupancy must be an integer between 1 and 20'),
   ratePlanShapeValidator,
   body().custom((value) => {

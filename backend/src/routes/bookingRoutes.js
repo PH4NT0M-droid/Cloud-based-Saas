@@ -87,7 +87,7 @@ router.put(
   validateRequest,
   bookingController.updateBooking,
 );
-router.delete('/:id', authorizeRoles('ADMIN', 'MANAGER'), authorizeManageBookings, bookingIdValidator, validateRequest, bookingController.cancelBooking);
+router.delete('/:id', authorizeRoles('ADMIN', 'MANAGER'), authorizeManageBookings, bookingIdValidator, validateRequest, bookingController.deleteBooking);
 router.post('/sync', authorizeRoles('ADMIN'), syncBookingsValidator, validateRequest, bookingController.syncBookings);
 
 module.exports = router;

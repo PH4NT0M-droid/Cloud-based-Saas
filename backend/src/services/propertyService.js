@@ -191,6 +191,7 @@ const getPropertyOverview = async (id, user) => {
     baseCapacity: roomType.baseCapacity,
     maxCapacity: roomType.maxCapacity,
     baseInventory: roomType.baseInventory,
+    roomInventory: roomType.baseInventory,
     inventories: roomType.inventories.map((inventory) => ({
       id: inventory.id,
       date: inventory.date,
@@ -208,6 +209,7 @@ const getPropertyOverview = async (id, user) => {
       id: ratePlan.id,
       mealPlanName: ratePlan.mealPlanName,
       extraBedPrice: ratePlan.extraBedPrice,
+      basePrice: ratePlan.basePrice,
       childPrice: ratePlan.childPrice,
       isDefault: ratePlan.isDefault,
     })),

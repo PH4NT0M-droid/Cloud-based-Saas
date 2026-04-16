@@ -95,6 +95,18 @@ const cancelBooking = async (req, res, next) => {
   }
 };
 
+const deleteBooking = async (req, res, next) => {
+  try {
+    const result = await bookingService.deleteBooking(req.params.id, req.user);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const syncBookings = async (req, res, next) => {
   try {
     const result = await bookingService.syncBookingsFromOtas(req.body.otas, req.user);
@@ -116,5 +128,6 @@ module.exports = {
   previewInvoice,
   getInvoice,
   cancelBooking,
+  deleteBooking,
   syncBookings,
 };

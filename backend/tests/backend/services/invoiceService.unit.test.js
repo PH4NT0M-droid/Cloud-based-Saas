@@ -53,7 +53,7 @@ describe('invoiceService unit', () => {
       },
     });
 
-    expect(html).toContain('Tax Invoice');
+    expect(html).toContain('Booking Confirmation');
     expect(html).toContain('booking-1');
     expect(html).toContain('Alex Doe');
     expect(html).toContain('Sea View');
