@@ -4,8 +4,6 @@ import DashboardLayout from './layouts/DashboardLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import PropertiesPage from './pages/PropertiesPage';
-import InventoryPage from './pages/InventoryPage';
-import RatesPage from './pages/RatesPage';
 import BookingsPage from './pages/BookingsPage';
 import PromotionsPage from './pages/PromotionsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -27,8 +25,6 @@ function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/properties" element={<PropertiesPage />} />
         <Route path="/properties/:propertyId" element={<PropertyDetails />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/rates" element={<RatesPage />} />
         <Route
           path="/bookings"
           element={

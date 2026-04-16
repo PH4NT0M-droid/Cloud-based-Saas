@@ -5,8 +5,6 @@ import { canManageBookings } from '../utils/permissions';
 const links = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/properties', label: 'Properties' },
-  { to: '/inventory', label: 'Inventory' },
-  { to: '/rates', label: 'Rates' },
   { to: '/bookings', label: 'Bookings' },
   { to: '/promotions', label: 'Promotions' },
   { to: '/analytics', label: 'Analytics' },

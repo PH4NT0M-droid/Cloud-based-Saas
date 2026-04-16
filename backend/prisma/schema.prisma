@@ -145,6 +145,7 @@ model RatePlan {
   roomTypeId    String
   roomType      RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
   mealPlanName  String
+  basePrice     Float    @default(0) @map("base_price")
   extraBedPrice Float?
   childPrice    Float?
   isDefault     Boolean  @default(false)

@@ -12,6 +12,7 @@ const {
 const { reduceInventory, restoreInventory } = require('./inventoryService');
 const pricingService = require('./pricingService');
 const invoiceService = require('./invoiceService');
+const promotionService = require('./promotionService');
 
 const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const isUniqueConstraintViolation = (error) => error?.code === 'P2002';
@@ -184,7 +185,7 @@ const normalizeRoomsPayload = (payload) => {
       ratePlanId: payload.ratePlanId || payload.rate_plan_id || null,
       rooms: Number(payload.roomsCount || 1),
       adults: Number(payload.guestsCount ?? payload.guests_count ?? 1),
-      extraBed: Number(payload.extraBed || 0),
+      extraBed: Number(payload.extraBed ?? payload.extraBeds ?? 0),
       children: Number(payload.children || 0),
       pricePerNight: payload.pricePerNight ?? payload.price_per_night,
     },
@@ -256,7 +257,7 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
 
     const rooms = Number(row.rooms || 0);
     const adults = Number(row.adults || 0);
-    const extraBed = Number(row.extraBed || 0);
+    const extraBed = Number(row.extraBed ?? row.extraBeds ?? 0);
     const children = Number(row.children || 0);
     if (rooms <= 0) {
       throw new ApiError(400, 'Rooms must be greater than 0');
@@ -281,16 +282,21 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
       }
     }
 
-    const pricePerNight = row.pricePerNight !== undefined && row.pricePerNight !== null
+    const basePricePerNight = row.pricePerNight !== undefined && row.pricePerNight !== null
       ? Number(row.pricePerNight)
       : Number(autoPrice);
 
-    if (Number.isNaN(pricePerNight) || pricePerNight < 0) {
+    if (Number.isNaN(basePricePerNight) || basePricePerNight < 0) {
       throw new ApiError(400, 'Price per night must be a valid non-negative value');
     }
 
     const extraBedPrice = Number(ratePlan?.extraBedPrice || 0);
-    const totalCost = round2(((pricePerNight * rooms) + (extraBedPrice * extraBed)) * nights);
+    const childPrice = Number(ratePlan?.childPrice || 0);
+    const adultCost = round2((basePricePerNight * rooms) * nights);
+    const extraBedCost = round2((extraBedPrice * extraBed) * nights);
+    const childCost = round2((childPrice * children) * nights);
+    const pricePerNight = round2(basePricePerNight + (extraBedPrice * extraBed));
+    const totalCost = round2(adultCost + extraBedCost + childCost);
 
     bookingRooms.push({
       roomTypeId: roomType.id,
@@ -299,14 +305,25 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
       adults,
       extraBed,
       children,
-      pricePerNight: round2(pricePerNight),
+      pricePerNight,
       totalCost,
+      adultCost,
+      extraBedCost,
+      childCost,
       nights,
+      extraBedPrice,
+      childPrice,
     });
 
     totalRooms += rooms;
     aggregatedGuestCount += adults + extraBed + children;
   }
+
+  const promotionDiscountPercent = await promotionService.getApplicableDiscountPercent({
+    propertyId: property.id,
+    date: checkIn,
+    txClient: tx,
+  });
 
   const totals = pricingService.calculateTotals({
     rows: bookingRooms,
@@ -314,6 +331,7 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
     guestState: payload.guestState || payload.guest_state,
     paidAmount: Number(payload.paidAmount ?? payload.paid_amount ?? existing?.paidAmount ?? 0),
     includeGstInvoice,
+    discountPercent: promotionDiscountPercent,
   });
 
   if (totals.paidAmount > totals.totalAmount) {
@@ -687,6 +705,47 @@ const updateBookingStatus = async (id, status, user) => {
   });
 };
 
+const deleteBooking = async (id, user) => {
+  assertBookingPermission(user);
+
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: {
+      property: true,
+      roomType: {
+        include: {
+          property: {
+            select: { id: true, name: true, location: true },
+          },
+        },
+      },
+      bookingRooms: true,
+    },
+  });
+
+  if (!booking) {
+    throw new ApiError(404, 'Booking not found');
+  }
+
+  if (!canMutateBooking(booking, user)) {
+    throw new ApiError(403, 'You are not authorized to delete this booking');
+  }
+
+  const bookingLines = getInventoryLinesForBooking(booking);
+
+  await prisma.$transaction(async (tx) => {
+    if (booking.status === 'CONFIRMED') {
+      for (const line of bookingLines) {
+        await restoreInventory(line.roomTypeId, booking.checkIn, booking.checkOut, tx, line.rooms);
+      }
+    }
+
+    await tx.booking.delete({ where: { id } });
+  });
+
+  return { id };
+};
+
 const createManualBooking = async (payload, user) => createBooking(payload, user);
 
 const normalizeOtaBooking = (booking) => ({
@@ -850,8 +909,18 @@ const getInvoicePayload = async (id, user) => {
           children: 0,
           pricePerNight: booking.nights > 0 ? round2(Number(booking.subtotal || booking.totalAmount || booking.totalPrice || 0) / booking.nights) : 0,
           totalCost: booking.subtotal || booking.totalAmount || booking.totalPrice || 0,
+          adultCost: booking.subtotal || booking.totalAmount || booking.totalPrice || 0,
+          extraBedCost: 0,
+          childCost: 0,
         },
       ];
+
+  const promotionDiscountPercent = property?.id
+    ? await promotionService.getApplicableDiscountPercent({
+        propertyId: property.id,
+        date: booking.checkIn,
+      })
+    : 0;
 
   const taxSummary = pricingService.calculateTotals({
     rows,
@@ -859,6 +928,7 @@ const getInvoicePayload = async (id, user) => {
     guestState: booking.guestState,
     paidAmount: booking.paidAmount,
     includeGstInvoice: booking.includeGstInvoice !== undefined ? Boolean(booking.includeGstInvoice) : Number(booking.gstRate || 0) > 0,
+    discountPercent: promotionDiscountPercent,
   });
 
   return {
@@ -886,6 +956,7 @@ module.exports = {
   createManualBooking,
   createBooking,
   updateBooking,
+  deleteBooking,
   syncBookingsFromOtas,
   getInvoiceHtml,
   getInvoicePdfBuffer,

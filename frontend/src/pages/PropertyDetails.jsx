@@ -34,6 +34,7 @@ const nextRatePlanDraftId = () => {
 const createRatePlanDraft = (ratePlan = {}) => ({
   _draftId: ratePlan._draftId || ratePlan.id || nextRatePlanDraftId(),
   mealPlanName: String(ratePlan.mealPlanName || '').trim().toUpperCase(),
+  basePrice: String(ratePlan.basePrice ?? ''),
   extraBedPrice: String(ratePlan.extraBedPrice ?? ''),
   isDefault: Boolean(ratePlan.isDefault),
 });
@@ -68,6 +69,7 @@ const normalizeRatePlans = (ratePlans = []) =>
 const createEmptyRatePlan = (mealPlanName = '') => ({
   _draftId: nextRatePlanDraftId(),
   mealPlanName,
+  basePrice: '',
   extraBedPrice: '',
   isDefault: false,
 });
@@ -86,6 +88,7 @@ const roomTypeToForm = (roomType = null) => {
     : [
         {
           mealPlanName: 'EP',
+          basePrice: roomType?.basePrice ?? 0,
           extraBedPrice: roomType?.extraPersonPrice ?? 0,
           isDefault: true,
         },
@@ -95,7 +98,7 @@ const roomTypeToForm = (roomType = null) => {
     name: roomType?.name || '',
     baseCapacity: String(roomType?.baseCapacity ?? 1),
     maxCapacity: String(roomType?.maxCapacity ?? roomType?.maxOccupancy ?? 1),
-    baseInventory: String(roomType?.baseInventory ?? 1),
+    roomInventory: String(roomType?.roomInventory ?? roomType?.baseInventory ?? 1),
     ratePlans: ensureDefaultRatePlan(normalizeRatePlans(ratePlans)),
   };
 };
@@ -144,7 +147,7 @@ function PropertyDetails() {
     name: '',
     baseCapacity: '1',
     maxCapacity: '2',
-    baseInventory: '1',
+    roomInventory: '1',
     ratePlans: [createEmptyRatePlan('EP')],
   });
   const [inventoryBulkForm, setInventoryBulkForm] = useState({
@@ -437,6 +440,7 @@ function PropertyDetails() {
 
     const normalizedRatePlans = ensureDefaultRatePlan(normalizeRatePlans(roomForm.ratePlans)).map((ratePlan) => ({
       mealPlanName: ratePlan.mealPlanName,
+      basePrice: ratePlan.basePrice === '' ? undefined : Number(ratePlan.basePrice),
       extraBedPrice: ratePlan.extraBedPrice === '' ? undefined : Number(ratePlan.extraBedPrice),
       isDefault: ratePlan.isDefault,
     }));
@@ -447,7 +451,7 @@ function PropertyDetails() {
           name: roomForm.name,
           baseCapacity: Number(roomForm.baseCapacity),
           maxCapacity: Number(roomForm.maxCapacity),
-          baseInventory: Number(roomForm.baseInventory),
+          roomInventory: Number(roomForm.roomInventory),
           ratePlans: normalizedRatePlans,
         });
         pushToast({ type: 'success', title: 'Room updated', message: `${roomForm.name} was updated.` });
@@ -457,7 +461,7 @@ function PropertyDetails() {
           name: roomForm.name,
           baseCapacity: Number(roomForm.baseCapacity),
           maxCapacity: Number(roomForm.maxCapacity),
-          baseInventory: Number(roomForm.baseInventory),
+          roomInventory: Number(roomForm.roomInventory),
           ratePlans: normalizedRatePlans,
         });
         pushToast({ type: 'success', title: 'Room added', message: `${roomForm.name} is now available.` });
@@ -630,7 +634,7 @@ function PropertyDetails() {
             <div key={roomType.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">{roomType.name}</p>
               <p className="mt-1 text-xs text-slate-500">Capacity {roomType.baseCapacity} to {roomType.maxCapacity}</p>
-              <p className="mt-1 text-xs text-slate-500">Base inventory {roomType.baseInventory ?? 0}</p>
+              <p className="mt-1 text-xs text-slate-500">Room inventory {roomType.roomInventory ?? roomType.baseInventory ?? 0}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {(roomType.ratePlans || []).map((ratePlan) => (
                   <span
@@ -753,11 +757,11 @@ function PropertyDetails() {
             required
           />
           <TextInput
-            label="Base inventory"
+            label="Room inventory"
             type="number"
             min="0"
-            value={roomForm.baseInventory}
-            onChange={(event) => setRoomForm((current) => ({ ...current, baseInventory: event.target.value }))}
+            value={roomForm.roomInventory}
+            onChange={(event) => setRoomForm((current) => ({ ...current, roomInventory: event.target.value }))}
             required
           />
 
@@ -775,7 +779,7 @@ function PropertyDetails() {
             <div className="space-y-3">
               {roomForm.ratePlans.map((ratePlan, index) => (
                 <div key={ratePlan._draftId || `${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="grid gap-3 md:grid-cols-[1.4fr,1fr,auto] md:items-end">
+                  <div className="grid gap-3 md:grid-cols-[1.3fr,1fr,1fr,auto] md:items-end">
                     <label className="space-y-1 text-sm">
                       <span className="font-semibold text-slate-700">Meal plan</span>
                       <input
@@ -787,7 +791,15 @@ function PropertyDetails() {
                       />
                     </label>
                     <TextInput
-                      label="Extra bed"
+                      label="Base price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={ratePlan.basePrice}
+                      onChange={(event) => updateRatePlanRow(index, 'basePrice', event.target.value)}
+                    />
+                    <TextInput
+                      label="Extra bed price"
                       type="number"
                       min="0"
                       step="0.01"

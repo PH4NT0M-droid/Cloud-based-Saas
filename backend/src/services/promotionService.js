@@ -49,6 +49,9 @@ const deletePromotion = async (id) => {
 
 const getApplicableDiscountPercent = async ({ propertyId, date, txClient }) => {
   const db = txClient || prisma;
+  if (!db?.promotion || typeof db.promotion.findMany !== 'function') {
+    return 0;
+  }
   const promotions = await db.promotion.findMany();
   const targetDate = new Date(date);
 

@@ -3,6 +3,7 @@ import bookingService from '../services/bookingService';
 import propertyService from '../services/propertyService';
 import roomService from '../services/roomService';
 import rateService from '../services/rateService';
+import promotionService from '../services/promotionService';
 import { formatCurrency } from '../utils/format';
 import ErrorBanner from '../components/ErrorBanner';
 import useAuth from '../hooks/useAuth';
@@ -11,7 +12,7 @@ import TextInput from '../components/forms/TextInput';
 import { useToast } from '../components/ToastProvider';
 import { canManageBookings as canManageBookingsPermission } from '../utils/permissions';
 
-const ROOM_TABLE_COLUMNS = ['Room Type', 'Meal Plan', 'Rooms', 'Adults', 'Extra Bed', 'Price / Night', 'Total'];
+const ROOM_TABLE_COLUMNS = ['Room Type', 'Meal Plan', 'Rooms', 'Adults', 'Extra Beds', 'Price / Night', 'Total'];
 
 const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const formatCurrency2 = (value) => `₹${Number(value || 0).toFixed(2)}`;
@@ -86,11 +87,18 @@ const getGstRateFromRowPrice = (pricePerNight) => {
   return 18;
 };
 
-const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount, includeGstInvoice }) => {
+const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount, includeGstInvoice, discountPercent = 0 }) => {
   const shouldApplyGst = Boolean(includeGstInvoice);
+  const safeDiscountPercent = Math.max(0, Math.min(100, Number(discountPercent || 0)));
+  const subtotalBeforeDiscount = round2(rows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0));
+  const discountAmount = round2((subtotalBeforeDiscount * safeDiscountPercent) / 100);
+  const discountedSubtotal = round2(Math.max(0, subtotalBeforeDiscount - discountAmount));
+  const discountMultiplier = subtotalBeforeDiscount > 0 ? discountedSubtotal / subtotalBeforeDiscount : 1;
+
   const taxRows = rows.map((row) => {
-    const rowSubtotal = Number(row.totalCost || 0);
-    const gstRate = shouldApplyGst ? getGstRateFromRowPrice(row.pricePerNight) : 0;
+    const rowSubtotal = Number(row.totalCost || 0) * discountMultiplier;
+    const discountedPerNight = Number((row.effectivePricePerNight ?? row.pricePerNight ?? 0)) * discountMultiplier;
+    const gstRate = shouldApplyGst ? getGstRateFromRowPrice(discountedPerNight) : 0;
     const rowGST = shouldApplyGst ? rowSubtotal * (gstRate / 100) : 0;
     return {
       ...row,
@@ -102,13 +110,14 @@ const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount,
   });
 
   const subtotal = round2(taxRows.reduce((sum, row) => sum + Number(row.rowSubtotal || 0), 0));
-  const totalGST = round2(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
-  const gstRate = subtotal > 0 ? round2((totalGST / subtotal) * 100) : 0;
+  const totalGSTRaw = round2(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
 
   const isIntraState = shouldApplyGst && normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
-  const cgst = isIntraState ? round2(totalGST / 2) : 0;
-  const sgst = isIntraState ? round2(totalGST / 2) : 0;
-  const igst = isIntraState ? 0 : totalGST;
+  const cgst = isIntraState ? round2(totalGSTRaw / 2) : 0;
+  const sgst = isIntraState ? round2(totalGSTRaw / 2) : 0;
+  const igst = isIntraState ? 0 : round2(totalGSTRaw);
+  const totalGST = round2(cgst + sgst + igst);
+  const gstRate = subtotal > 0 ? round2((totalGST / subtotal) * 100) : 0;
 
   const exactTotal = subtotal + totalGST;
   const totalAmount = Math.round(exactTotal);
@@ -120,6 +129,9 @@ const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount,
   return {
     nights,
     totalRooms: rows.reduce((sum, row) => sum + Number(row.rooms || 0), 0),
+    discountPercent: safeDiscountPercent,
+    discountAmount,
+    subtotalBeforeDiscount,
     subtotal,
     totalGST,
     gstRate,
@@ -163,6 +175,7 @@ function BookingsPage() {
 
   const [bookings, setBookings] = useState([]);
   const [properties, setProperties] = useState([]);
+  const [promotions, setPromotions] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [pricingGrid, setPricingGrid] = useState({ dates: [], rows: [] });
 
@@ -228,6 +241,35 @@ function BookingsPage() {
     [rooms, form.propertyId],
   );
 
+  const applicablePromotion = useMemo(() => {
+    if (!form.propertyId || !form.checkIn) {
+      return null;
+    }
+
+    const checkInDate = new Date(form.checkIn);
+    if (Number.isNaN(checkInDate.getTime())) {
+      return null;
+    }
+
+    const filtered = promotions.filter((promotion) => {
+      const propertyIds = Array.isArray(promotion.propertyIds) ? promotion.propertyIds : [];
+      const matchesProperty = propertyIds.length === 0 || propertyIds.includes(form.propertyId);
+      const startsAt = promotion.startDate ? new Date(promotion.startDate) : null;
+      const endsAt = promotion.endDate ? new Date(promotion.endDate) : null;
+      const inStartWindow = !startsAt || startsAt <= checkInDate;
+      const inEndWindow = !endsAt || endsAt >= checkInDate;
+      return matchesProperty && inStartWindow && inEndWindow;
+    });
+
+    if (!filtered.length) {
+      return null;
+    }
+
+    return filtered.reduce((best, current) =>
+      Number(current.discountPercent || 0) > Number(best.discountPercent || 0) ? current : best,
+    filtered[0]);
+  }, [promotions, form.propertyId, form.checkIn]);
+
   const pricedRows = useMemo(() => {
     const dateKeys = getDateKeysForStay(form.checkIn, form.checkOut);
     return form.rooms.map((row) => {
@@ -249,9 +291,12 @@ function BookingsPage() {
       const roomsCount = Number(row.rooms || 0);
       const extraBedCount = Number(row.extraBed || 0);
       const extraBedPrice = Number(ratePlan?.extraBedPrice || 0);
+      const childrenCount = Number(row.children || 0);
+      const childPrice = Number(ratePlan?.childPrice || 0);
       const roomNightlySubtotal = computedNightly * roomsCount;
       const extraBedNightlySubtotal = extraBedPrice * extraBedCount;
-      const totalCost = round2((roomNightlySubtotal + extraBedNightlySubtotal) * nights);
+      const childNightlySubtotal = childPrice * childrenCount;
+      const totalCost = round2((roomNightlySubtotal + extraBedNightlySubtotal + childNightlySubtotal) * nights);
 
       return {
         ...row,
@@ -259,7 +304,9 @@ function BookingsPage() {
         ratePlan,
         ratePlanId: effectiveRatePlanId,
         pricePerNight: computedNightly,
+        effectivePricePerNight: round2(computedNightly + extraBedNightlySubtotal),
         extraBedPrice,
+        childPrice,
         totalCost,
       };
     });
@@ -274,8 +321,9 @@ function BookingsPage() {
         nights,
         paidAmount: form.paidAmount,
         includeGstInvoice: form.includeGstInvoice,
+        discountPercent: applicablePromotion?.discountPercent || 0,
       }),
-    [pricedRows, selectedProperty, form.guestState, form.paidAmount, form.includeGstInvoice, nights],
+    [pricedRows, selectedProperty, form.guestState, form.paidAmount, form.includeGstInvoice, nights, applicablePromotion],
   );
 
   const loadBookings = async () => {
@@ -299,9 +347,10 @@ function BookingsPage() {
 
     const load = async () => {
       try {
-        const [bookingsResult, propertiesResult] = await Promise.all([
+        const [bookingsResult, propertiesResult, promotionsResult] = await Promise.all([
           bookingService.getAll({}),
           propertyService.getAll(),
+          promotionService.getAll().catch(() => []),
         ]);
 
         if (!isActive) {
@@ -310,6 +359,7 @@ function BookingsPage() {
 
         setBookings(bookingsResult);
         setProperties(propertiesResult);
+        setPromotions(Array.isArray(promotionsResult) ? promotionsResult : []);
       } catch (loadError) {
         if (!isActive) {
           return;
@@ -541,6 +591,7 @@ function BookingsPage() {
       paymentReference: form.paymentReference || undefined,
       specialNote: form.specialNote || undefined,
       includeGstInvoice: Boolean(form.includeGstInvoice),
+      promotionDiscountPercent: applicablePromotion?.discountPercent || 0,
       paidAmount: summary.paidAmount,
       rooms: pricedRows.map((row) => ({
         roomTypeId: row.roomTypeId,
@@ -583,6 +634,19 @@ function BookingsPage() {
       pushToast({ type: 'success', title: 'Booking cancelled', message: 'Booking cancelled and inventory restored.' });
     } catch (cancelError) {
       pushToast({ type: 'error', title: 'Cancel failed', message: cancelError.response?.data?.message || cancelError.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteBooking = async (bookingId) => {
+    try {
+      setBusy(true);
+      await bookingService.remove(bookingId);
+      await loadBookings();
+      pushToast({ type: 'success', title: 'Booking deleted', message: 'Booking was permanently deleted.' });
+    } catch (deleteError) {
+      pushToast({ type: 'error', title: 'Delete failed', message: deleteError.response?.data?.message || deleteError.message });
     } finally {
       setBusy(false);
     }
@@ -669,8 +733,8 @@ function BookingsPage() {
         ) : null}
       </div>
 
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-        <table className="min-w-full text-sm">
+      <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-xl">
+        <table className="w-full min-w-[980px] text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="px-4 py-3 text-left font-semibold">Property</th>
@@ -711,7 +775,7 @@ function BookingsPage() {
                     >
                       Download Invoice
                     </button>
-                    {canManageBookings ? (
+                    {canManageBookings && booking.status !== 'CANCELLED' ? (
                       <button
                         type="button"
                         onClick={() => openEditBooking(booking.id)}
@@ -728,6 +792,16 @@ function BookingsPage() {
                         className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Cancel
+                      </button>
+                    ) : null}
+                    {canManageBookings ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => deleteBooking(booking.id)}
+                        className="rounded-full bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Delete Booking
                       </button>
                     ) : null}
                   </div>
@@ -891,6 +965,7 @@ function BookingsPage() {
             </div>
             <div className="mt-2 grid gap-2 md:grid-cols-4">
               <p>Round Off: <strong>{formatCurrency2(summary.roundOff)}</strong></p>
+              {summary.discountAmount > 0 ? <p>Promotion Applied: <strong>-{formatCurrency2(summary.discountAmount)}</strong></p> : null}
               {summary.cgst > 0 ? <p>CGST: <strong>{formatCurrency2(summary.cgst)}</strong></p> : null}
               {summary.sgst > 0 ? <p>SGST: <strong>{formatCurrency2(summary.sgst)}</strong></p> : null}
               {summary.igst > 0 ? <p>IGST: <strong>{formatCurrency2(summary.igst)}</strong></p> : null}

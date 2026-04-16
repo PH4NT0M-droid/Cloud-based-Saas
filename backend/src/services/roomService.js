@@ -37,6 +37,7 @@ const normalizeRatePlans = (ratePlansInput, currentRatePlans = []) => {
     }
     seenNames.add(mealPlanName);
 
+    const basePrice = item.basePrice !== undefined ? Number(item.basePrice) : undefined;
     const extraBedPrice = item.extraBedPrice !== undefined ? Number(item.extraBedPrice) : undefined;
     const childPrice = item.childPrice !== undefined ? Number(item.childPrice) : undefined;
     const isDefault = Boolean(item.isDefault);
@@ -54,6 +55,7 @@ const normalizeRatePlans = (ratePlansInput, currentRatePlans = []) => {
     return {
       id: current?.id,
       mealPlanName,
+      basePrice,
       extraBedPrice,
       childPrice,
       isDefault,
@@ -70,10 +72,12 @@ const normalizeRatePlans = (ratePlansInput, currentRatePlans = []) => {
 
 const withRatePlans = (roomType) => ({
   ...roomType,
+  roomInventory: roomType.baseInventory,
   ratePlans: (roomType.ratePlans || [])
     .map((ratePlan) => ({
       ...ratePlan,
       mealPlanName: normalizeMealPlanName(ratePlan.mealPlanName),
+      basePrice: Number(ratePlan.basePrice ?? roomType.basePrice ?? 0),
     }))
     .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.mealPlanName.localeCompare(right.mealPlanName)),
 });
@@ -89,7 +93,7 @@ const normalizeRoomPayload = (payload, current = null) => {
   const extraPersonPrice =
     toNumberOrUndefined(payload.extraPersonPrice ?? payload.extra_person_price) ?? current?.extraPersonPrice ?? 0;
   const baseInventory =
-    toNumberOrUndefined(payload.baseInventory ?? payload.base_inventory) ?? current?.baseInventory ?? 1;
+    toNumberOrUndefined(payload.roomInventory ?? payload.room_inventory ?? payload.baseInventory ?? payload.base_inventory) ?? current?.baseInventory ?? 1;
 
   if (baseCapacity === undefined || maxCapacity === undefined) {
     throw new ApiError(400, 'baseCapacity and maxCapacity are required');
@@ -139,11 +143,12 @@ const createRoomPlans = async (tx, roomTypeId, ratePlans) => {
 
   await tx.ratePlan.createMany({
     data: ratePlans.map((ratePlan) => ({
-      roomTypeId,
-      mealPlanName: ratePlan.mealPlanName,
-      extraBedPrice: ratePlan.extraBedPrice ?? null,
-      childPrice: ratePlan.childPrice ?? null,
-      isDefault: Boolean(ratePlan.isDefault),
+        roomTypeId,
+        mealPlanName: ratePlan.mealPlanName,
+        basePrice: ratePlan.basePrice ?? 0,
+        extraBedPrice: ratePlan.extraBedPrice ?? null,
+        childPrice: ratePlan.childPrice ?? null,
+        isDefault: Boolean(ratePlan.isDefault),
     })),
   });
 
@@ -153,13 +158,66 @@ const createRoomPlans = async (tx, roomTypeId, ratePlans) => {
   });
 };
 
-const replaceRoomPlans = async (tx, roomTypeId, ratePlans) => {
+const syncRoomPlans = async (tx, roomTypeId, ratePlans, currentRatePlans = []) => {
   if (!Array.isArray(ratePlans)) {
-    return [];
+    return { plans: [], changedBasePricePlanIds: [], newPlanIds: [] };
   }
 
-  await tx.ratePlan.deleteMany({ where: { roomTypeId } });
-  return createRoomPlans(tx, roomTypeId, ratePlans);
+  const existingByName = (currentRatePlans || []).reduce((acc, plan) => {
+    acc[normalizeMealPlanName(plan.mealPlanName)] = plan;
+    return acc;
+  }, {});
+
+  const incomingNames = new Set(ratePlans.map((ratePlan) => normalizeMealPlanName(ratePlan.mealPlanName)));
+  const changedBasePricePlanIds = [];
+  const newPlanIds = [];
+
+  for (const ratePlan of ratePlans) {
+    const existing = existingByName[normalizeMealPlanName(ratePlan.mealPlanName)];
+    const nextBasePrice = Number(ratePlan.basePrice ?? 0);
+    if (existing) {
+      await tx.ratePlan.update({
+        where: { id: existing.id },
+        data: {
+          mealPlanName: ratePlan.mealPlanName,
+          basePrice: nextBasePrice,
+          extraBedPrice: ratePlan.extraBedPrice ?? null,
+          childPrice: ratePlan.childPrice ?? null,
+          isDefault: Boolean(ratePlan.isDefault),
+        },
+      });
+      if (Number(existing.basePrice ?? 0) !== nextBasePrice) {
+        changedBasePricePlanIds.push(existing.id);
+      }
+      continue;
+    }
+
+    const created = await tx.ratePlan.create({
+      data: {
+        roomTypeId,
+        mealPlanName: ratePlan.mealPlanName,
+        basePrice: nextBasePrice,
+        extraBedPrice: ratePlan.extraBedPrice ?? null,
+        childPrice: ratePlan.childPrice ?? null,
+        isDefault: Boolean(ratePlan.isDefault),
+      },
+    });
+    newPlanIds.push(created.id);
+  }
+
+  const toDelete = (currentRatePlans || [])
+    .filter((ratePlan) => !incomingNames.has(normalizeMealPlanName(ratePlan.mealPlanName)))
+    .map((ratePlan) => ratePlan.id);
+  if (toDelete.length > 0) {
+    await tx.ratePlan.deleteMany({ where: { roomTypeId, id: { in: toDelete } } });
+  }
+
+  const plans = await tx.ratePlan.findMany({
+    where: { roomTypeId },
+    orderBy: [{ isDefault: 'desc' }, { mealPlanName: 'asc' }],
+  });
+
+  return { plans, changedBasePricePlanIds, newPlanIds };
 };
 
 const seedRoomPricingForDateRange = async ({ tx, roomTypeId, ratePlans, startDate, endDate, fallbackPrice }) => {
@@ -194,13 +252,23 @@ const seedRoomPricingForDateRange = async ({ tx, roomTypeId, ratePlans, startDat
         roomTypeId,
         ratePlanId: plan.id,
         date,
-        price: Number(fallbackPrice ?? 0),
+        price: Number(plan.basePrice ?? fallbackPrice ?? 0),
       });
     }
   }
 
   if (rows.length > 0) {
     await tx.roomPricing.createMany({ data: rows });
+  }
+};
+
+const overwritePricingGridForPlans = async ({ tx, planIds = [], planPriceById = {} }) => {
+  for (const planId of planIds) {
+    const nextPrice = Number(planPriceById[planId] ?? 0);
+    await tx.roomPricing.updateMany({
+      where: { ratePlanId: planId },
+      data: { price: nextPrice },
+    });
   }
 };
 
@@ -239,7 +307,7 @@ const createRoomType = async (payload, user) => {
   if (!normalizedRatePlans) {
     return prisma.roomType.create({
       data: createData,
-    });
+    }).then((created) => withRatePlans(created));
   }
 
   return prisma.$transaction(async (tx) => {
@@ -267,7 +335,7 @@ const createRoomType = async (payload, user) => {
         property: { select: { id: true, name: true } },
         ratePlans: { orderBy: [{ isDefault: 'desc' }, { mealPlanName: 'asc' }] },
       },
-    });
+    }).then((created) => withRatePlans(created));
   });
 };
 
@@ -338,7 +406,7 @@ const updateRoomType = async (id, payload, user) => {
       },
     });
 
-    const updatedPlans = await replaceRoomPlans(tx, id, normalizedRatePlans);
+    const { plans: updatedPlans, changedBasePricePlanIds } = await syncRoomPlans(tx, id, normalizedRatePlans, roomType.ratePlans || []);
     const today = new Date();
     const startDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
     const endDate = new Date(startDate);
@@ -351,6 +419,17 @@ const updateRoomType = async (id, payload, user) => {
       endDate,
       fallbackPrice: updatedRoomType.basePrice ?? normalized.basePrice,
     });
+    if (changedBasePricePlanIds.length > 0) {
+      const planPriceById = updatedPlans.reduce((acc, plan) => {
+        acc[plan.id] = Number(plan.basePrice ?? updatedRoomType.basePrice ?? normalized.basePrice ?? 0);
+        return acc;
+      }, {});
+      await overwritePricingGridForPlans({
+        tx,
+        planIds: changedBasePricePlanIds,
+        planPriceById,
+      });
+    }
 
     return tx.roomType.findUnique({
       where: { id },
