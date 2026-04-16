@@ -86,8 +86,8 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
   <div class="header">
     <div>
       <h2 style="margin:0;">Booking Confirmation</h2>
-      <div>Booking ID: ${escapeHtml(booking.id)}</div>
       <div>Booking Date: ${formatDateOnly(booking.createdAt)}</div>
+      <div>Booking ID: ${escapeHtml(booking.id)}</div>
       <div>Booking Source: ${escapeHtml(booking.otaSource || booking.source || 'Direct')}</div>
       <div>Source Type: ${escapeHtml(booking.sourceType || 'Manual')}</div>
     </div>
@@ -102,7 +102,7 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
 
   <div class="section card">
     <strong>Dear ${escapeHtml(booking.guestName)}</strong>
-    <div>Thank you for making a reservation with us. Please find your booking confirmation details below.</div>
+    <div>Thank you for making a reservation...</div>
   </div>
 
   <div class="section" style="display:flex; gap:12px;">
