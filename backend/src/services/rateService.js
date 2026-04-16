@@ -155,17 +155,19 @@ const updatePricing = async (payload, user) => {
     throw new ApiError(400, 'Selected rate plan does not belong to room type');
   }
 
+  const targetRatePlanId = selectedPlan.id;
+
   const row = await prisma.roomPricing.upsert({
     where: {
       roomTypeId_ratePlanId_date: {
         roomTypeId,
-        ratePlanId,
+        ratePlanId: targetRatePlanId,
         date,
       },
     },
     create: {
       roomTypeId,
-      ratePlanId,
+      ratePlanId: targetRatePlanId,
       date,
       price,
     },

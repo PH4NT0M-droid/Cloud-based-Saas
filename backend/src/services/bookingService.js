@@ -14,6 +14,7 @@ const pricingService = require('./pricingService');
 const invoiceService = require('./invoiceService');
 
 const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const isUniqueConstraintViolation = (error) => error?.code === 'P2002';
 
 const normalizeMealPlanName = (value) => String(value || '').trim().toUpperCase();
 
@@ -718,23 +719,22 @@ const syncBookingsFromOtas = async (otas, user) => {
 
   for (const booking of incoming) {
     try {
-      const existing = await prisma.booking.findUnique({
-        where: {
-          otaSource_roomTypeId_checkIn_guestName: {
-            otaSource: booking.otaSource,
-            roomTypeId: booking.roomTypeId,
-            checkIn: booking.checkIn,
-            guestName: booking.guestName,
-          },
-        },
-      });
-
-      if (existing) {
-        summary.duplicates += 1;
-        continue;
-      }
-
       const created = await prisma.$transaction(async (tx) => {
+        const existing = await tx.booking.findUnique({
+          where: {
+            otaSource_roomTypeId_checkIn_guestName: {
+              otaSource: booking.otaSource,
+              roomTypeId: booking.roomTypeId,
+              checkIn: booking.checkIn,
+              guestName: booking.guestName,
+            },
+          },
+        });
+
+        if (existing) {
+          return null;
+        }
+
         const roomType = await loadRoomTypeRecord(tx, booking.roomTypeId);
 
         if (!roomType) {
@@ -804,6 +804,11 @@ const syncBookingsFromOtas = async (otas, user) => {
         return bookingRecord;
       });
 
+      if (!created) {
+        summary.duplicates += 1;
+        continue;
+      }
+
       summary.created += 1;
       summary.processedBookingIds.push(created.id);
 
@@ -812,6 +817,10 @@ const syncBookingsFromOtas = async (otas, user) => {
         message: `New booking received from ${booking.otaSource} for roomType ${booking.roomTypeId}`,
       });
     } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        summary.duplicates += 1;
+        continue;
+      }
       summary.failed += 1;
       summary.failedItems.push({
         otaSource: booking.otaSource,

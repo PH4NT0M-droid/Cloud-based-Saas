@@ -123,6 +123,7 @@ describe('Booking API', () => {
         upsert: jest.fn().mockResolvedValue({}),
       },
       booking: {
+        findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'b-1' }),
       },
       promotion: {
@@ -155,7 +156,15 @@ describe('Booking API', () => {
       ],
     });
 
-    prisma.booking.findUnique.mockResolvedValue({ id: 'existing-booking' });
+    const tx = {
+      booking: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'existing-booking' }),
+        create: jest.fn(),
+      },
+      $transaction: jest.fn().mockImplementation(async (callback) => callback(tx)),
+    };
+
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
 
     const res = await request(app).post('/api/bookings/sync').set('Authorization', `Bearer ${adminToken}`).send({});
 

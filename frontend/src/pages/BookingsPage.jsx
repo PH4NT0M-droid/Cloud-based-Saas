@@ -295,9 +295,34 @@ function BookingsPage() {
       return;
     }
 
-    Promise.all([loadBookings(), loadProperties()]).catch((loadError) => {
-      setError(loadError.response?.data?.message || 'Failed to load bookings');
-    });
+    let isActive = true;
+
+    const load = async () => {
+      try {
+        const [bookingsResult, propertiesResult] = await Promise.all([
+          bookingService.getAll({}),
+          propertyService.getAll(),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        setBookings(bookingsResult);
+        setProperties(propertiesResult);
+      } catch (loadError) {
+        if (!isActive) {
+          return;
+        }
+        setError(loadError.response?.data?.message || 'Failed to load bookings');
+      }
+    };
+
+    load();
+
+    return () => {
+      isActive = false;
+    };
   }, [canManageBookings]);
 
   useEffect(() => {
