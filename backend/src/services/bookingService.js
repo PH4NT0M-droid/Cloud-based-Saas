@@ -295,7 +295,7 @@ const normalizeBookingPayload = async ({ payload, tx, user, existing = null }) =
     const adultCost = round2((basePricePerNight * rooms) * nights);
     const extraBedCost = round2((extraBedPrice * extraBed) * nights);
     const childCost = round2((childPrice * children) * nights);
-    const pricePerNight = round2(basePricePerNight + (extraBedPrice * extraBed) + (childPrice * children));
+    const pricePerNight = round2(basePricePerNight + (extraBedPrice * extraBed));
     const totalCost = round2(adultCost + extraBedCost + childCost);
 
     bookingRooms.push({

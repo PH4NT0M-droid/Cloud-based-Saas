@@ -97,7 +97,8 @@ const calculateSummary = ({ rows, propertyState, guestState, nights, paidAmount,
 
   const taxRows = rows.map((row) => {
     const rowSubtotal = Number(row.totalCost || 0) * discountMultiplier;
-    const gstRate = shouldApplyGst ? getGstRateFromRowPrice(row.effectivePricePerNight ?? row.pricePerNight) : 0;
+    const discountedPerNight = Number((row.effectivePricePerNight ?? row.pricePerNight ?? 0)) * discountMultiplier;
+    const gstRate = shouldApplyGst ? getGstRateFromRowPrice(discountedPerNight) : 0;
     const rowGST = shouldApplyGst ? rowSubtotal * (gstRate / 100) : 0;
     return {
       ...row,
@@ -303,7 +304,7 @@ function BookingsPage() {
         ratePlan,
         ratePlanId: effectiveRatePlanId,
         pricePerNight: computedNightly,
-        effectivePricePerNight: round2(computedNightly + extraBedNightlySubtotal + childNightlySubtotal),
+        effectivePricePerNight: round2(computedNightly + extraBedNightlySubtotal),
         extraBedPrice,
         childPrice,
         totalCost,
