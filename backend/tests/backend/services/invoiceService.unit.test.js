@@ -58,6 +58,33 @@ describe('invoiceService unit', () => {
     expect(html).toContain('Alex Doe');
     expect(html).toContain('Sea View');
     expect(html).toContain('Deluxe');
+    expect(html).toContain('Total GST Amount (SGST: 50.00) | (CGST: 50.00) 100.00 /-');
+  });
+
+  it('renderInvoiceHtml shows IGST format for inter-state GST', () => {
+    const html = invoiceService.renderInvoiceHtml({
+      booking: {
+        id: 'booking-igst',
+        guestName: 'Isha',
+        checkIn: '2026-08-10',
+        checkOut: '2026-08-12',
+        nights: 2,
+        totalRooms: 1,
+        subtotal: 2000,
+        cgst: 0,
+        sgst: 0,
+        igst: 100,
+        totalAmount: 2100,
+        paidAmount: 0,
+        dueAmount: 2100,
+        createdAt: '2026-08-01',
+      },
+      property: { name: 'Sea View' },
+      bookingRooms: [],
+      taxSummary: { totalGST: 100, rows: [] },
+    });
+
+    expect(html).toContain('Total GST Amount (IGST: 100.00) 100.00 /-');
   });
 
   it('generateInvoicePDF returns a buffer', async () => {

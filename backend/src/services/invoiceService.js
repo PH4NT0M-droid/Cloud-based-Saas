@@ -29,6 +29,19 @@ const escapeHtml = (value) =>
     .replace(/'/g, '&#39;');
 
 const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} }) => {
+  const taxSummaryTotal = Number(taxSummary.totalGST ?? 0);
+  const bookingCgst = Number(booking.cgst || 0);
+  const bookingSgst = Number(booking.sgst || 0);
+  const bookingIgst = Number(booking.igst || 0);
+  const componentGstTotal = Number((bookingCgst + bookingSgst + bookingIgst).toFixed(2));
+  const summaryMatchesComponents =
+    Number.isFinite(taxSummaryTotal) && Number(taxSummaryTotal.toFixed(2)) === componentGstTotal;
+  const gstCharged = summaryMatchesComponents ? Number(taxSummaryTotal.toFixed(2)) : componentGstTotal;
+  const isInterStateGst = bookingIgst > 0;
+  const gstDisplayLine = isInterStateGst
+    ? `Total GST Amount (IGST: ${bookingIgst.toFixed(2)}) ${gstCharged.toFixed(2)} /-`
+    : `Total GST Amount (SGST: ${bookingSgst.toFixed(2)}) | (CGST: ${bookingCgst.toFixed(2)}) ${gstCharged.toFixed(2)} /-`;
+
   const taxRows = Array.isArray(taxSummary.rows) && taxSummary.rows.length > 0 ? taxSummary.rows : [];
   const rows = (taxRows.length > 0 ? taxRows : (bookingRooms || []))
     .map((row, index) => {
@@ -152,7 +165,7 @@ const renderInvoiceHtml = ({ booking, property, bookingRooms, taxSummary = {} })
 
   <div class="section summary">
     <div>Net Cost ${Number(booking.subtotal || 0).toFixed(2)} /-</div>
-    <div>Total GST Amount (SGST: ${Number(booking.sgst || 0).toFixed(2)}) | (CGST: ${Number(booking.cgst || 0).toFixed(2)}) ${Number(taxSummary.totalGST ?? (Number(booking.cgst || 0) + Number(booking.sgst || 0) + Number(booking.igst || 0))).toFixed(2)} /-</div>
+    <div>${gstDisplayLine}</div>
     <div>Payable Amount ${Number(booking.totalAmount || 0).toFixed(2)} /-</div>
     <div>Paid Amount ${Number(booking.paidAmount || 0).toFixed(2)} /-</div>
     <div>Due Amount ${Number(booking.dueAmount || 0).toFixed(2)} /-</div>

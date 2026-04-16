@@ -134,7 +134,7 @@ const calculateTotals = ({
 
   const taxRows = rows.map((row) => buildRowTaxSummary(row, includeGstInvoice, discountMultiplier));
   const subtotal = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowSubtotal || 0), 0));
-  const totalGSTRaw = toTwoDecimals(taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0));
+  const totalGSTRaw = taxRows.reduce((sum, row) => sum + Number(row.rowGST || 0), 0);
   const isIntraState = includeGstInvoice && normalizeState(propertyState) && normalizeState(propertyState) === normalizeState(guestState);
 
   const cgst = isIntraState ? toTwoDecimals(totalGSTRaw / 2) : 0;

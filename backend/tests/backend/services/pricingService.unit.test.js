@@ -66,4 +66,33 @@ describe('pricingService unit', () => {
     expect(totals.igst).toBe(100);
     expect(totals.totalAmount).toBe(2100);
   });
+
+  it('calculateTotals intra-state splits first and rounds each half', () => {
+    const totals = pricingService.calculateTotals({
+      rows: [{ rooms: 1, nights: 1, pricePerNight: 1000, totalCost: 1000.01 }],
+      propertyState: 'GOA',
+      guestState: 'goa',
+      paidAmount: 0,
+    });
+
+    const expectedHalf = Number((50.0005 / 2).toFixed(2));
+    expect(totals.cgst).toBe(expectedHalf);
+    expect(totals.sgst).toBe(expectedHalf);
+    expect(totals.igst).toBe(0);
+    expect(totals.totalGST).toBe(Number((totals.cgst + totals.sgst + totals.igst).toFixed(2)));
+  });
+
+  it('calculateTotals inter-state rounds IGST after full GST sum', () => {
+    const totals = pricingService.calculateTotals({
+      rows: [{ rooms: 1, nights: 1, pricePerNight: 1000, totalCost: 1000.01 }],
+      propertyState: 'GOA',
+      guestState: 'KARNATAKA',
+      paidAmount: 0,
+    });
+
+    expect(totals.cgst).toBe(0);
+    expect(totals.sgst).toBe(0);
+    expect(totals.igst).toBe(50);
+    expect(totals.totalGST).toBe(Number((totals.cgst + totals.sgst + totals.igst).toFixed(2)));
+  });
 });
